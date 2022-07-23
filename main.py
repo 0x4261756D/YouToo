@@ -45,9 +45,9 @@ def get_url(url):
 
 def watch_for_changes(event, url, period):
 	print("Looking for updates")
-	conn = http.client.HTTPSConnection(url)
 	i = 1
 	while not event.is_set():
+		conn = http.client.HTTPSConnection(url)
 		for channel in channel_dict:
 			conn.request("GET", "/channel/" + channel)
 			response = conn.getresponse()
@@ -63,26 +63,24 @@ def watch_for_changes(event, url, period):
 				response = conn.getresponse()
 				conn.close()
 			text = response.read().decode()
-			videos = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], text.split("href=\"/watch?v="))))
-			if videos != channel_dict[channel]:
+			videos = set(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], text.split("href=\"/watch?v="))))
+			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND")
-				print("Channel:", text.split("<title>")[1].split("</title>"))
+				print("Channel:", text.split("<title>")[1].split("</title>")[0])
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
-					title = text.split(videos[0] + "\">")[1].split("</a>")[0].split("<p dir=auto>")[1].split("</p>")[0]
+					channel_dict[channel].add(diff)
+					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0]
 					print("Title:", title)
 					if should_download:
 						print("Downloading", )
 						payload = urllib.parse.urlencode({"id": diff, "title": title, "download_widget": '{"itag": ' + '22' if resolution == "720p" else '18' + ', "ext":"mp4"}'})
-						conn = http.client.HTTPSConnection(url)
 						conn.request("POST", "/download", headers={"Content-Type": "x-www-form-urlencoded"}, body=payload)
 						response = conn.getresponse()
-						conn.close()
 						if response.status != 302:
+							print(response.status)
 							raise KeyError()
-						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
-						conn.close()
 						response = response.getresponse()
 						f = open("downloads/" + title + ".mp4", "wb")
 						f.write(response.read())
@@ -92,6 +90,7 @@ def watch_for_changes(event, url, period):
 		print("checked", i, "times")
 		event.wait(period)
 		i += 1
+		conn.close()
 	return url
 
 for line in content:
@@ -110,7 +109,7 @@ for line in content:
 		tup = line.split("µ")
 		if len(tup) != 2 or tup[0] in channel_dict:
 			raise KeyError()
-		channel_dict[tup[0]] = tup[1].split("&")
+		channel_dict[tup[0]] = set(tup[1].split("&"))
 
 if period == -1:
 	period = 5
