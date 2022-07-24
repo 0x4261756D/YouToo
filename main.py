@@ -16,6 +16,7 @@ period = -1
 base_url = None
 should_download = False
 resolution = None
+display_unchanged_things = False
 
 def get_url(url):
 	conn = http.client.HTTPSConnection(url)
@@ -85,7 +86,7 @@ def watch_for_changes(event, url, period):
 						f = open("downloads/" + title + ".mp4", "wb")
 						f.write(response.read())
 						f.close()
-			else:
+			elif display_unchanged_things:
 				print("No updates found for", channel)
 		print("checked", i, "times")
 		event.wait(period)
@@ -105,6 +106,8 @@ for line in content:
 			should_download = line.split("=")[1] == "true"
 		if line.startswith("µresolution"):
 			resolution = line.split("=")[1]
+		if line.startswith("µdisplay_unchanged_things"):
+			display_unchanged_things = line.split("=")[1] == "true"
 	else:
 		tup = line.split("µ")
 		if len(tup) != 2 or tup[0] in channel_dict:
@@ -127,7 +130,8 @@ while True:
 	print("3: Add a channel")
 	print("4: Remove a channel")
 	print("5: Change downloading status")
-	print("6: Exit")
+	print("6: Change displaying unchanged things")
+	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
 		#watch_for_changes(base_url, period)
@@ -156,11 +160,15 @@ while True:
 		print("Current value:", should_download)
 		should_download = input("New value: ") == "true"
 	elif option == "6":
+		print("Current value:", display_unchanged_things)
+		display_unchanged_things = input("New value: ") == "true"
+	elif option == "q":
 		break
 
 f = open("settings.conf", "w")
 f.write("µperiod=" + str(period) + "\n")
 f.write("µbase_url=" + base_url + "\n")
+f.write("µdisplay_unchanged_things=" + display_unchanged_things + "\n")
 if resolution:
 	f.write("µresolution=" + resolution + "\n")
 f.write("µshould_download=" + str(should_download).lower() + "\n")
