@@ -134,7 +134,7 @@ while True:
 		event = threading.Event()
 		thread = threading.Thread(target = watch_for_changes, args=(event, base_url, period))
 		thread.start()
-		input("Press any key to interrupt")
+		input("Press any key to interrupt\n")
 		print("STOPPING")
 		event.set()
 	elif option == "2":
