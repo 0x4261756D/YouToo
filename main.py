@@ -114,6 +114,16 @@ for line in content:
 			raise KeyError()
 		channel_dict[tup[0]] = set(tup[1].split("&"))
 
+def add_channel(id):
+	global channel_dict
+	if id in channel_dict:
+		print("Channel already exists")
+		raise KeyError()
+	conn = http.client.HTTPSConnection(base_url)
+	conn.request("GET", "/channel/" + id)
+	channel_dict[id] = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], conn.getresponse().read().decode().split("href=\"/watch?v="))))
+
+
 if period == -1:
 	period = 5
 if not base_url:
@@ -131,6 +141,7 @@ while True:
 	print("4: Remove a channel")
 	print("5: Change downloading status")
 	print("6: Change displaying unchanged things")
+	print("7: Read channel list from file")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -146,12 +157,7 @@ while True:
 		period = int(input("New period in seconds: "))
 	elif option == "3":
 		id = input("New channel's id: ")
-		if id in channel_dict:
-			print("Channel already exists")
-			raise KeyError()
-		conn = http.client.HTTPSConnection(base_url)
-		conn.request("GET", "/channel/" + id)
-		channel_dict[id] = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], conn.getresponse().read().decode().split("href=\"/watch?v="))))
+		add_channel(id)
 	elif option == "4":
 		for channel in channel_dict:
 			print(channel)
@@ -162,6 +168,14 @@ while True:
 	elif option == "6":
 		print("Current value:", display_unchanged_things)
 		display_unchanged_things = input("New value: ") == "true"
+	elif option == "7":
+		fname = input("File location: ")
+		if not os.path.exists(fname):
+			print("File does not exist")
+		else:
+			channel_list = open(fname).readlines()
+			for channel in channel_list:
+				add_channel(channel.split(" ")[0])
 	elif option == "q":
 		break
 
