@@ -97,19 +97,19 @@ def watch_for_changes(event, url, period):
 for line in content:
 	if line == "":
 		continue
-	if line.startswith("µ"):
-		if line.startswith("µperiod="):
+	if line.startswith("|"):
+		if line.startswith("|period="):
 			period = int(line.split("=")[1])
-		if line.startswith("µbase_url="):
+		if line.startswith("|base_url="):
 			base_url = line.split("=")[1]
-		if line.startswith("µshould_download="):
+		if line.startswith("|should_download="):
 			should_download = line.split("=")[1] == "true"
-		if line.startswith("µresolution"):
+		if line.startswith("|resolution"):
 			resolution = line.split("=")[1]
-		if line.startswith("µdisplay_unchanged_things"):
+		if line.startswith("|display_unchanged_things"):
 			display_unchanged_things = line.split("=")[1] == "true"
 	else:
-		tup = line.split("µ")
+		tup = line.split("|")
 		if len(tup) != 2 or tup[0] in channel_dict:
 			raise KeyError()
 		channel_dict[tup[0]] = set(tup[1].split("&"))
@@ -166,13 +166,13 @@ while True:
 		break
 
 f = open("settings.conf", "w")
-f.write("µperiod=" + str(period) + "\n")
-f.write("µbase_url=" + base_url + "\n")
-f.write("µdisplay_unchanged_things=" + display_unchanged_things + "\n")
+f.write("|period=" + str(period) + "\n")
+f.write("|base_url=" + base_url + "\n")
+f.write("|display_unchanged_things=" + str(display_unchanged_things) + "\n")
 if resolution:
-	f.write("µresolution=" + resolution + "\n")
-f.write("µshould_download=" + str(should_download).lower() + "\n")
+	f.write("|resolution=" + resolution + "\n")
+f.write("|should_download=" + str(should_download).lower() + "\n")
 for channel in channel_dict:
-	f.write(channel + "µ" + "&".join(channel_dict[channel]) + "\n")
+	f.write(channel + "|" + "&".join(channel_dict[channel]) + "\n")
 
 f.close()
