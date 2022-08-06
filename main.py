@@ -18,6 +18,7 @@ base_url = None
 should_download = False
 resolution = None
 display_unchanged_things = False
+download_folder = "downloads/"
 
 def get_url(url):
 	conn = http.client.HTTPSConnection(url)
@@ -78,15 +79,31 @@ def watch_for_changes(event, url, period):
 					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0]
 					print("Title:", title)
 					if should_download:
-						print("Downloading", )
-						payload = urllib.parse.urlencode({"id": diff, "title": title, "download_widget": '{"itag": ' + '22' if resolution == "720p" else '18' + ', "ext":"mp4"}'})
-						conn.request("POST", "/download", headers={"Content-Type": "x-www-form-urlencoded"}, body=payload)
+						print("Downloading")
+						while response.status != 200 and "Download is disabled" in text:
+							print(response.status, response.reason)
+							conn.close()
+							print("Updating URL. Current URL:", url)
+							url = get_url(url)
+							print("New URL:", url)
+							conn = http.client.HTTPSConnection(url)
+							print(url, "/channel/" + channel)
+							conn.request("GET", "/channel/" + channel)
+							response = conn.getresponse()
+							conn.close()
+						quality_string = '{"itag":18,"ext":"mp4"}'
+						if resolution == "720p":
+							quality_string = '{"itag":22,"ext":"mp4"}'
+						payload = urllib.parse.urlencode({"id": diff, "title": title, "download_widget": quality_string})
+						conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
 						response = conn.getresponse()
 						if response.status != 302:
-							print(response.status)
+							print(response.status, payload)
 							raise KeyError()
+						conn.close()
+						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
-						response = response.getresponse()
+						response = conn.getresponse()
 						f = open("downloads/" + title + ".mp4", "wb")
 						f.write(response.read())
 						f.close()
@@ -112,6 +129,8 @@ for line in content:
 			resolution = line.split("=")[1]
 		if line.startswith("|display_unchanged_things"):
 			display_unchanged_things = line.split("=")[1] == "true"
+		if line.startswith("|download_folder"):
+			download_folder = line.split("=")[1]
 	else:
 		tup = line.split("|")
 		if len(tup) != 2 or tup[0] in channel_dict:
@@ -133,6 +152,8 @@ if period == -1:
 	period = 5
 if not base_url:
 	base_url = "vid.puffyan.us"
+if should_download and not os.path.exists(download_folder):
+	os.mkdir(download_folder)
 
 while True:
 	print("Currently tracked channels:")
@@ -187,6 +208,7 @@ f = open("settings.conf", "w")
 f.write("|period=" + str(period) + "\n")
 f.write("|base_url=" + base_url + "\n")
 f.write("|display_unchanged_things=" + str(display_unchanged_things) + "\n")
+f.write("|download_folder=" + str(download_folder) + "\n")
 if resolution:
 	f.write("|resolution=" + resolution + "\n")
 f.write("|should_download=" + str(should_download).lower() + "\n")
