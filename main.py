@@ -4,6 +4,7 @@ import time
 import threading
 import os
 import sys
+import datetime
 
 if not os.path.exists("settings.conf"):
 	open("settings.conf", "w").close()
@@ -67,6 +68,9 @@ def watch_for_changes(event, url, period):
 			videos = set(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], text.split("href=\"/watch?v="))))
 			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND")
+				if len(text.split("<title>")) < 2:
+					print(text)
+					raise KeyError()
 				print("Channel:", text.split("<title>")[1].split("</title>")[0])
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
@@ -88,7 +92,7 @@ def watch_for_changes(event, url, period):
 						f.close()
 			elif display_unchanged_things:
 				print("No updates found for", channel)
-		print("checked", i, "times")
+		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
 		event.wait(period)
 		i += 1
 		conn.close()
@@ -111,6 +115,7 @@ for line in content:
 	else:
 		tup = line.split("|")
 		if len(tup) != 2 or tup[0] in channel_dict:
+			print(tup)
 			raise KeyError()
 		channel_dict[tup[0]] = set(tup[1].split("&"))
 
@@ -128,7 +133,6 @@ if period == -1:
 	period = 5
 if not base_url:
 	base_url = "vid.puffyan.us"
-	
 
 while True:
 	print("Currently tracked channels:")
