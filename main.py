@@ -5,6 +5,7 @@ import threading
 import os
 import sys
 import datetime
+import re
 
 if not os.path.exists("settings.conf"):
 	open("settings.conf", "w").close()
@@ -54,6 +55,7 @@ def watch_for_changes(event, url, period):
 		for channel in channel_dict:
 			conn.request("GET", "/channel/" + channel)
 			response = conn.getresponse()
+			text = response.read().decode()
 			while response.status != 200:
 				print(response.status, response.reason)
 				conn.close()
@@ -64,8 +66,8 @@ def watch_for_changes(event, url, period):
 				print(url, "/channel/" + channel)
 				conn.request("GET", "/channel/" + channel)
 				response = conn.getresponse()
+				text = response.read().decode()
 				conn.close()
-			text = response.read().decode()
 			videos = set(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], text.split("href=\"/watch?v="))))
 			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND")
@@ -99,13 +101,14 @@ def watch_for_changes(event, url, period):
 						response = conn.getresponse()
 						if response.status != 302:
 							print(response.status, payload)
+							print(response.read().decode())
 							raise KeyError()
 						conn.close()
 						print("Got the video url")
 						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
 						response = conn.getresponse()
-						f = open("downloads/" + title + ".mp4", "wb")
+						f = open("downloads/" + re.sub(r'\W+', '_', title) + ".mp4", "wb")
 						f.write(response.read())
 						f.close()
 						print("Download done")
@@ -162,7 +165,7 @@ while True:
 	for channel in channel_dict:
 		print(channel)
 	print("---------------------------")
-	print("Current instance:", url)
+	print("Current instance:", base_url)
 	print("1: Start watching for changes every", period, "seconds")
 	print(f"2: Change period ({period})")
 	print("3: Add a channel")
