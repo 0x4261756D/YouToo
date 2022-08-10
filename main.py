@@ -177,6 +177,7 @@ while True:
 	print(f"5: Change downloading status ({should_download})")
 	print(f"6: Change displaying unchanged things ({display_unchanged_things})")
 	print("7: Read channel list from file")
+	print(f"8: Change resolution to download ({resolution})")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -210,6 +211,8 @@ while True:
 			channel_list = open(fname).readlines()
 			for channel in channel_list:
 				add_channel(channel.split(" ")[0])
+	elif option == "8":
+		resolution = input("New resolution: ")
 	elif option == "q":
 		break
 
