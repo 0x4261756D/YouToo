@@ -108,7 +108,11 @@ def watch_for_changes(event, url, period):
 						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
 						response = conn.getresponse()
-						f = open("downloads/" + re.sub(r'\W+', '_', title) + ".mp4", "wb")
+						sanitized_title = re.sub(r'\W+', '_', title).removesuffix("_")
+						folder_name = download_folder + "/" + str(datetime.date.fromtimestamp(time.time()).isoformat)
+						if not os.path.exists(folder_name):
+							os.mkdir(folder_name)
+						f = open(folder_name + sanitized_title + ".mp4", "wb")
 						f.write(response.read())
 						f.close()
 						print("Download done")
