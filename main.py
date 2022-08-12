@@ -74,11 +74,12 @@ def watch_for_changes(event, url, period):
 				if len(text.split("<title>")) < 2:
 					print(text)
 					raise KeyError()
-				print("Channel:", text.split("<title>")[1].split("</title>")[0])
+				channel_name = text.split("<title>")[1].split("</title>")[0]
+				print("Channel:", channel_name)
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
 					channel_dict[channel].add(diff)
-					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0]
+					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace(" - Invidious", "")
 					print("Title:", title)
 					if should_download:
 						print("Downloading")
@@ -108,7 +109,7 @@ def watch_for_changes(event, url, period):
 						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
 						response = conn.getresponse()
-						sanitized_title = re.sub(r'\W+', '_', title).removesuffix("_")
+						sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
 						folder_name = download_folder + str(datetime.date.fromtimestamp(time.time()).isoformat())
 						if not os.path.exists(folder_name):
 							os.mkdir(folder_name)
