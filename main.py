@@ -33,17 +33,17 @@ def get_url(url):
 	conn.close()
 	possible_list = list(map(lambda x: x.split(">")[-1], data.split("instances-list")[1].split("</ul>")[0].split("</a>")))
 	for possibility in possible_list:
+		print("Trying", possibility)
 		try:
-			print("Trying", possibility)
 			conn = http.client.HTTPSConnection(possibility)
 			conn.request("GET", "/")
 			response = conn.getresponse()
 			conn.close()
-			print(response.status, response.reason)
-			if response.status in [200, 302]:
-				return possibility
 		except:
 			pass
+		print(response.status, response.reason)
+		if response.status in [200, 302]:
+			return possibility
 	print("Could not find a valid server")
 	raise KeyError()
 
@@ -51,6 +51,7 @@ def watch_for_changes(event, url, period):
 	print("Looking for updates")
 	i = 1
 	while not event.is_set():
+		print(f"Starting to look now: {datetime.datetime.fromtimestamp(time.time())}")
 		conn = http.client.HTTPSConnection(url)
 		for channel in channel_dict:
 			conn.request("GET", "/channel/" + channel)
@@ -73,13 +74,13 @@ def watch_for_changes(event, url, period):
 				print("UPDATE FOUND")
 				if len(text.split("<title>")) < 2:
 					print(text)
-					raise KeyError()
-				channel_name = text.split("<title>")[1].split("</title>")[0]
+					print("Could not find a title")
+					continue
+				channel_name = text.split("<title>")[1].split("</title>")[0].replace("- Invidious", "")
 				print("Channel:", channel_name)
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
-					channel_dict[channel].add(diff)
-					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace(" - Invidious", "")
+					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
 					if should_download:
 						print("Downloading")
@@ -100,11 +101,12 @@ def watch_for_changes(event, url, period):
 						payload = urllib.parse.urlencode({"id": diff, "title": title, "download_widget": quality_string})
 						conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
 						response = conn.getresponse()
+						conn.close()
 						if response.status != 302:
 							print(response.status, payload)
 							print(response.read().decode())
-							raise KeyError()
-						conn.close()
+							print("Could not get the correct status code")
+							continue
 						print("Got the video url")
 						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
@@ -114,9 +116,14 @@ def watch_for_changes(event, url, period):
 						if not os.path.exists(folder_name):
 							os.mkdir(folder_name)
 						f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
-						f.write(response.read())
+						try:
+							f.write(response.read())
+						except http.client.IncompleteRead:
+							print("got an incomplete read when downloading")
+							continue
 						f.close()
 						print("Download done")
+					channel_dict[channel].add(diff)
 			elif display_unchanged_things:
 				print("No updates found for", channel)
 		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
