@@ -75,6 +75,7 @@ def watch_for_changes(event, url, period):
 				if len(text.split("<title>")) < 2:
 					print(text)
 					print("Could not find a title")
+					conn.close()
 					continue
 				channel_name = text.split("<title>")[1].split("</title>")[0].replace("- Invidious", "")
 				print("Channel:", channel_name)
@@ -83,7 +84,6 @@ def watch_for_changes(event, url, period):
 					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
 					if should_download:
-						print("Downloading")
 						while response.status != 200 and "Download is disabled" in text:
 							print(response.status, response.reason)
 							conn.close()
@@ -110,6 +110,7 @@ def watch_for_changes(event, url, period):
 						print("Got the video url")
 						conn = http.client.HTTPSConnection(url)
 						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
+						print("Downloading")
 						response = conn.getresponse()
 						sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
 						folder_name = download_folder + str(datetime.date.fromtimestamp(time.time()).isoformat())
@@ -117,9 +118,19 @@ def watch_for_changes(event, url, period):
 							os.mkdir(folder_name)
 						f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
 						try:
-							f.write(response.read())
+							vid = response.read()
+							if len(vid) == 0:
+								print("The downloaded video was empty, response code:", response.status)
+								f.close()
+								print("Updating URL, current URL:", url)
+								url = get_url(url)
+								print("New URL:", url)
+								continue
+							f.write(vid)
 						except http.client.IncompleteRead:
-							print("got an incomplete read when downloading")
+							print("got an incomplete read when downloading, skipping")
+							conn.close()
+							f.close()
 							continue
 						f.close()
 						print("Download done")
