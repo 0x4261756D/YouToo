@@ -12,20 +12,18 @@ if not os.path.exists("settings.conf"):
 f = open("settings.conf", "r")
 content = f.read().split("\n")
 f.close()
-channel_dict = {}
+channel_dict: dict = {}
+failed_downloads: dict[str, tuple[str, str, str]] = {}
 
 period = -1
 base_url = None
 should_download = False
+should_reattempt_failed_downloads: bool = False
 resolution = None
 display_unchanged_things = False
 download_folder = "downloads/"
 
-def get_url(url):
-	conn = http.client.HTTPSConnection(url)
-	conn.request("GET", "/")
-	response = conn.getresponse()
-	conn.close()
+def get_url(url: str) -> str:
 	conn = http.client.HTTPSConnection("redirect.invidious.io")
 	conn.request("GET", "/")
 	response = conn.getresponse()
@@ -47,29 +45,83 @@ def get_url(url):
 	print("Could not find a valid server")
 	raise KeyError()
 
+incomplete_read_count = 0
+incomplete_read_reload = 5
+
+def download_video(conn, url, video_url, title, channel_name):
+	global failed_downloads
+	global incomplete_read_count
+	quality_string = '{"itag":18,"ext":"mp4"}'
+	if resolution == "720p":
+		quality_string = '{"itag":22,"ext":"mp4"}'
+	payload = urllib.parse.urlencode({"id": video_url, "title": title, "download_widget": quality_string})
+	conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
+	response = conn.getresponse()
+	conn.close()
+	if response.status != 302:
+		print(response.status, payload)
+		print(response.read().decode())
+		print("Could not get the correct status code")
+		return False
+	print("Got the video url")
+	conn = http.client.HTTPSConnection(url)
+	conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
+	print("Downloading")
+	response = conn.getresponse()
+	sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
+	folder_name = download_folder + str(datetime.date.fromtimestamp(time.time()).isoformat())
+	if not os.path.exists(folder_name):
+		os.mkdir(folder_name)
+	f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
+	try:
+		vid = response.read()
+		if len(vid) == 0:
+			print("The downloaded video was empty, response code:", response.status)
+			f.close()
+			print("Updating URL, current URL:", url)
+			url = get_url(url)
+			print("New URL:", url)
+			return False
+		f.write(vid)
+	except http.client.IncompleteRead:
+		print("got an incomplete read when downloading, skipping")
+		conn.close()
+		f.close()
+		if incomplete_read_count == incomplete_read_reload:
+			incomplete_read_count = 0
+			url = get_url(url)
+		return False
+	f.close()
+	print("Download done")
+	return True
+
 def watch_for_changes(event, url, period):
+	global channel_dict
+	global failed_downloads
 	print("Looking for updates")
 	i = 1
 	while not event.is_set():
 		print(f"Starting to look now: {datetime.datetime.fromtimestamp(time.time())}")
 		conn = http.client.HTTPSConnection(url)
 		for channel in channel_dict:
-			conn.request("GET", "/channel/" + channel)
+			if event.is_set():
+				return
+			conn.request("GET", "/playlist?list=" + channel)
 			response = conn.getresponse()
 			text = response.read().decode()
-			while response.status != 200:
+			while response.status != 200 and not event.is_set():
 				print(response.status, response.reason)
 				conn.close()
 				print("Updating URL. Current URL:", url)
 				url = get_url(url)
 				print("New URL:", url)
 				conn = http.client.HTTPSConnection(url)
-				print(url, "/channel/" + channel)
-				conn.request("GET", "/channel/" + channel)
+				print(url, "/playlist?list=" + channel)
+				conn.request("GET", "/playlist?list=" + channel)
 				response = conn.getresponse()
 				text = response.read().decode()
 				conn.close()
-			videos = set(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], text.split("href=\"/watch?v="))))
+			videos = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
 			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND")
 				if len(text.split("<title>")) < 2:
@@ -77,13 +129,15 @@ def watch_for_changes(event, url, period):
 					print("Could not find a title")
 					conn.close()
 					continue
-				channel_name = text.split("<title>")[1].split("</title>")[0].replace("- Invidious", "")
+				channel_name = text.split("<title>")[1].split("</title>")[0].replace("Uploads from ", "").replace("- Invidious", "")
 				print("Channel:", channel_name)
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
-					title = text.split(diff + "\">")[1].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
+					if event.is_set():
+						return
+					title = text.split(diff)[2].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
-					if should_download:
+					if should_download and not (diff in failed_downloads and should_reattempt_failed_downloads):
 						while response.status != 200 and "Download is disabled" in text:
 							print(response.status, response.reason)
 							conn.close()
@@ -91,53 +145,33 @@ def watch_for_changes(event, url, period):
 							url = get_url(url)
 							print("New URL:", url)
 							conn = http.client.HTTPSConnection(url)
-							print(url, "/channel/" + channel)
-							conn.request("GET", "/channel/" + channel)
+							print(url, "/playlist?list=" + channel)
+							conn.request("GET", "/playlist?list=" + channel)
 							response = conn.getresponse()
 							conn.close()
-						quality_string = '{"itag":18,"ext":"mp4"}'
-						if resolution == "720p":
-							quality_string = '{"itag":22,"ext":"mp4"}'
-						payload = urllib.parse.urlencode({"id": diff, "title": title, "download_widget": quality_string})
-						conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
-						response = conn.getresponse()
-						conn.close()
-						if response.status != 302:
-							print(response.status, payload)
-							print(response.read().decode())
-							print("Could not get the correct status code")
+						if not download_video(conn, url, diff, title, channel_name):
+							if not diff in failed_downloads:
+								failed_downloads[diff] = (channel, title, channel_name)
 							continue
-						print("Got the video url")
-						conn = http.client.HTTPSConnection(url)
-						conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
-						print("Downloading")
-						response = conn.getresponse()
-						sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
-						folder_name = download_folder + str(datetime.date.fromtimestamp(time.time()).isoformat())
-						if not os.path.exists(folder_name):
-							os.mkdir(folder_name)
-						f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
-						try:
-							vid = response.read()
-							if len(vid) == 0:
-								print("The downloaded video was empty, response code:", response.status)
-								f.close()
-								print("Updating URL, current URL:", url)
-								url = get_url(url)
-								print("New URL:", url)
-								continue
-							f.write(vid)
-						except http.client.IncompleteRead:
-							print("got an incomplete read when downloading, skipping")
-							conn.close()
-							f.close()
-							continue
-						f.close()
-						print("Download done")
 					channel_dict[channel].add(diff)
 			elif display_unchanged_things:
 				print("No updates found for", channel)
 		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
+		if should_reattempt_failed_downloads and len(failed_downloads) > 0:
+			print("reattempting failed previous attempts")
+			to_remove = []
+			print("before:", len(failed_downloads))
+			for failed in failed_downloads:
+				if event.is_set():
+					return
+				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2]):
+					to_remove.append(failed)
+			for failed in to_remove:
+				print("removing", failed_downloads[failed])
+				channel_dict[failed_downloads[failed][0]].add(failed)
+				failed_downloads.pop(failed)
+			print("after:", len(failed_downloads))
+			print("done reattempting")
 		event.wait(period)
 		i += 1
 		conn.close()
@@ -149,16 +183,25 @@ for line in content:
 	if line.startswith("|"):
 		if line.startswith("|period="):
 			period = int(line.split("=")[1])
-		if line.startswith("|base_url="):
+		elif line.startswith("|base_url="):
 			base_url = line.split("=")[1]
-		if line.startswith("|should_download="):
-			should_download = line.split("=")[1] == "true"
-		if line.startswith("|resolution"):
+		elif line.startswith("|should_download="):
+			should_download = line.split("=")[1] == "True"
+		elif line.startswith("|resolution"):
 			resolution = line.split("=")[1]
-		if line.startswith("|display_unchanged_things"):
-			display_unchanged_things = line.split("=")[1] == "true"
-		if line.startswith("|download_folder"):
+		elif line.startswith("|display_unchanged_things"):
+			display_unchanged_things = line.split("=")[1] == "True"
+		elif line.startswith("|download_folder"):
 			download_folder = line.split("=")[1]
+		elif line.startswith("|should_reattempt_failed_downloads"):
+			should_reattempt_failed_downloads = line.split("=")[1] == "True"
+		elif line.startswith("|failed_downloads"):
+			for failed in line.split("=")[1].split("&")[:-1]:
+				if len(failed.split("|")) != 2:
+					raise KeyError()
+				failed_parts = failed.split("|")
+				failed_val = failed_parts[1].split(", ")
+				failed_downloads[failed_parts[0]] = (failed_val[0][2:-1], failed_val[1][1:-1], failed_val[2][1:-2])
 	else:
 		tup = line.split("|")
 		if len(tup) != 2 or tup[0] in channel_dict:
@@ -172,8 +215,10 @@ def add_channel(id):
 		print("Channel already exists")
 		raise KeyError()
 	conn = http.client.HTTPSConnection(base_url)
-	conn.request("GET", "/channel/" + id)
-	channel_dict[id] = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], conn.getresponse().read().decode().split("href=\"/watch?v="))))
+	conn.request("GET", "/playlist?list=" + id)
+	text = conn.getresponse().read().decode()
+	channel_dict[id] = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
+#	channel_dict[id] = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], conn.getresponse().read().decode().split("href=\"/watch?v="))))
 
 
 if period == -1:
@@ -197,6 +242,7 @@ while True:
 	print(f"6: Change displaying unchanged things ({display_unchanged_things})")
 	print("7: Read channel list from file")
 	print(f"8: Change resolution to download ({resolution})")
+	print(f"9: Change reattempts at failed downloads ({should_reattempt_failed_downloads})")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -218,7 +264,7 @@ while True:
 		channel_dict.remove(input("Channel to delete: "))
 	elif option == "5":
 		print("Current value:", should_download)
-		should_download = input("New value: ") == "true"
+		should_download = input("New value: ").lower() == "true"
 	elif option == "6":
 		print("Current value:", display_unchanged_things)
 		display_unchanged_things = input("New value: ") == "true"
@@ -229,9 +275,11 @@ while True:
 		else:
 			channel_list = open(fname).readlines()
 			for channel in channel_list:
-				add_channel(channel.split(" ")[0])
+				add_channel(channel.split(" ")[0].replace("\n", ""))
 	elif option == "8":
 		resolution = input("New resolution: ")
+	elif option == "9":
+		resolution = input("New value: ").lower() == "true"
 	elif option == "q":
 		break
 
@@ -240,9 +288,15 @@ f.write("|period=" + str(period) + "\n")
 f.write("|base_url=" + base_url + "\n")
 f.write("|display_unchanged_things=" + str(display_unchanged_things) + "\n")
 f.write("|download_folder=" + str(download_folder) + "\n")
+f.write("|should_reattempt_failed_downloads=" + str(should_reattempt_failed_downloads) + "\n")
+if len(failed_downloads) > 0:
+	f.write(f"|failed_downloads=")
+	for failed in failed_downloads:
+		f.write(f"{failed}|{failed_downloads[failed]}&")
+	f.write("\n")
 if resolution:
 	f.write("|resolution=" + resolution + "\n")
-f.write("|should_download=" + str(should_download).lower() + "\n")
+f.write("|should_download=" + str(should_download) + "\n")
 for channel in channel_dict:
 	f.write(channel + "|" + "&".join(channel_dict[channel]) + "\n")
 
