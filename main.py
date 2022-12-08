@@ -125,7 +125,7 @@ def watch_for_changes(event, url, period):
 			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND")
 				if len(text.split("<title>")) < 2:
-					print(text)
+					# print(text)
 					print("Could not find a title")
 					conn.close()
 					continue
@@ -196,11 +196,12 @@ for line in content:
 		elif line.startswith("|should_reattempt_failed_downloads"):
 			should_reattempt_failed_downloads = line.split("=")[1] == "True"
 		elif line.startswith("|failed_downloads"):
-			for failed in line.split("=")[1].split("&")[:-1]:
-				if len(failed.split("|")) != 2:
+			for failed in line.split("=")[1].split("%")[:-1]:
+				if len(failed.split("|")) < 2:
 					raise KeyError()
 				failed_parts = failed.split("|")
-				failed_val = failed_parts[1].split(", ")
+				failed_val = "|".join(failed_parts[1:]).split(", ")
+				print(failed_val)
 				failed_downloads[failed_parts[0]] = (failed_val[0][2:-1], failed_val[1][1:-1], failed_val[2][1:-2])
 	else:
 		tup = line.split("|")
@@ -279,7 +280,7 @@ while True:
 	elif option == "8":
 		resolution = input("New resolution: ")
 	elif option == "9":
-		resolution = input("New value: ").lower() == "true"
+		should_reattempt_failed_downloads = input("New value: ").lower() == "true"
 	elif option == "q":
 		break
 
@@ -292,7 +293,7 @@ f.write("|should_reattempt_failed_downloads=" + str(should_reattempt_failed_down
 if len(failed_downloads) > 0:
 	f.write(f"|failed_downloads=")
 	for failed in failed_downloads:
-		f.write(f"{failed}|{failed_downloads[failed]}&")
+		f.write(f"{failed}|{failed_downloads[failed]}%")
 	f.write("\n")
 if resolution:
 	f.write("|resolution=" + resolution + "\n")
