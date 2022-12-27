@@ -123,10 +123,11 @@ def watch_for_changes(event, url, period):
 				conn.close()
 			videos = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
 			if len(videos.difference(channel_dict[channel])) != 0:
-				print("UPDATE FOUND")
+				print("UPDATE FOUND:", channel)
 				if len(text.split("<title>")) < 2:
-					# print(text)
 					print("Could not find a title")
+					with open("err.log", "w") as f:
+						f.write(text.encode(encoding="UTF-8", errors="ignore"))
 					conn.close()
 					continue
 				channel_name = text.split("<title>")[1].split("</title>")[0].replace("Uploads from ", "").replace("- Invidious", "")
