@@ -9,7 +9,7 @@ import re
 
 if not os.path.exists("settings.conf"):
 	open("settings.conf", "w").close()
-f = open("settings.conf", "r")
+f = open("settings.conf", "r", encoding="utf-8")
 content = f.read().split("\n")
 f.close()
 channel_dict: dict = {}
@@ -127,7 +127,7 @@ def watch_for_changes(event, url, period):
 				if len(text.split("<title>")) < 2:
 					print("Could not find a title")
 					with open("err.log", "w") as f:
-						f.write(text.encode(encoding="UTF-8", errors="ignore"))
+						f.write(text.encode(encoding="UTF-8", errors="ignore").hex())
 					conn.close()
 					continue
 				channel_name = text.split("<title>")[1].split("</title>")[0].replace("Uploads from ", "").replace("- Invidious", "")
@@ -285,7 +285,7 @@ while True:
 	elif option == "q":
 		break
 
-f = open("settings.conf", "w")
+f = open("settings.conf", "w", encoding="utf-8")
 f.write("|period=" + str(period) + "\n")
 f.write("|base_url=" + base_url + "\n")
 f.write("|display_unchanged_things=" + str(display_unchanged_things) + "\n")
