@@ -6,6 +6,7 @@ import os
 import sys
 import datetime
 import re
+from typing import Optional
 
 if not os.path.exists("settings.conf"):
 	open("settings.conf", "w").close()
@@ -48,7 +49,7 @@ def get_url(url: str) -> str:
 incomplete_read_count = 0
 incomplete_read_reload = 5
 
-def download_video(conn, url, video_url, title, channel_name):
+def download_video(conn, url, video_url, title, channel_name, timeout: Optional[float]):
 	global failed_downloads
 	global incomplete_read_count
 	quality_string = '{"itag":18,"ext":"mp4"}'
@@ -56,7 +57,16 @@ def download_video(conn, url, video_url, title, channel_name):
 		quality_string = '{"itag":22,"ext":"mp4"}'
 	payload = urllib.parse.urlencode({"id": video_url, "title": title, "download_widget": quality_string})
 	conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
-	response = conn.getresponse()
+	try:
+		response = conn.getresponse()
+	except Exception as e:
+		print(e)
+		conn.close()
+		incomplete_read_count += 2
+		if incomplete_read_count >= incomplete_read_count:
+			incomplete_read_count = 0
+			url = get_url(url)
+		return False
 	conn.close()
 	if response.status != 302:
 		print(response.status, payload)
@@ -64,7 +74,7 @@ def download_video(conn, url, video_url, title, channel_name):
 		print("Could not get the correct status code")
 		return False
 	print("Got the video url")
-	conn = http.client.HTTPSConnection(url)
+	conn = http.client.HTTPSConnection(url, timeout=timeout)
 	conn.request("GET", list(filter(lambda x: x[0] == "Location", response.getheaders()))[0][1])
 	print("Downloading")
 	response = conn.getresponse()
@@ -83,11 +93,12 @@ def download_video(conn, url, video_url, title, channel_name):
 			print("New URL:", url)
 			return False
 		f.write(vid)
-	except http.client.IncompleteRead:
-		print("got an incomplete read when downloading, skipping")
+	except Exception as e:
+		print(e)
 		conn.close()
 		f.close()
-		if incomplete_read_count == incomplete_read_reload:
+		incomplete_read_count += 2
+		if incomplete_read_count >= incomplete_read_reload:
 			incomplete_read_count = 0
 			url = get_url(url)
 		return False
@@ -98,6 +109,7 @@ def download_video(conn, url, video_url, title, channel_name):
 def watch_for_changes(event, url, period):
 	global channel_dict
 	global failed_downloads
+	global incomplete_read_count
 	print("Looking for updates")
 	i = 1
 	while not event.is_set():
@@ -124,13 +136,17 @@ def watch_for_changes(event, url, period):
 			videos = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
 			if len(videos.difference(channel_dict[channel])) != 0:
 				print("UPDATE FOUND:", channel)
-				if len(text.split("<title>")) < 2:
+				if len(text.split('class="channel-name"')) < 2:
 					print("Could not find a title")
-					with open("err.log", "w") as f:
-						f.write(text.encode(encoding="UTF-8", errors="ignore").hex())
+					incomplete_read_count += 2
+					if incomplete_read_count >= incomplete_read_reload:
+						incomplete_read_count = 0
+						url = get_url(url)
+					with open("err.log", "w", encoding="utf-8") as f:
+						f.write(text)
 					conn.close()
 					continue
-				channel_name = text.split("<title>")[1].split("</title>")[0].replace("Uploads from ", "").replace("- Invidious", "")
+				channel_name = text.split('class="channel-name"')[1].split("</p>")[0].split(">")[1]
 				print("Channel:", channel_name)
 				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
 				for diff in vid_diff:
@@ -150,14 +166,13 @@ def watch_for_changes(event, url, period):
 							conn.request("GET", "/playlist?list=" + channel)
 							response = conn.getresponse()
 							conn.close()
-						if not download_video(conn, url, diff, title, channel_name):
+						if not download_video(conn, url, diff, title, channel_name, None):
 							if not diff in failed_downloads:
 								failed_downloads[diff] = (channel, title, channel_name)
 							continue
 					channel_dict[channel].add(diff)
 			elif display_unchanged_things:
 				print("No updates found for", channel)
-		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
 		if should_reattempt_failed_downloads and len(failed_downloads) > 0:
 			print("reattempting failed previous attempts")
 			to_remove = []
@@ -165,7 +180,7 @@ def watch_for_changes(event, url, period):
 			for failed in failed_downloads:
 				if event.is_set():
 					return
-				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2]):
+				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2], 600):
 					to_remove.append(failed)
 			for failed in to_remove:
 				print("removing", failed_downloads[failed])
@@ -173,9 +188,10 @@ def watch_for_changes(event, url, period):
 				failed_downloads.pop(failed)
 			print("after:", len(failed_downloads))
 			print("done reattempting")
-		event.wait(period)
 		i += 1
 		conn.close()
+		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
+		event.wait(period)
 	return url
 
 for line in content:
