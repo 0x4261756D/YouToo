@@ -24,7 +24,12 @@ resolution = None
 display_unchanged_things = False
 download_folder = "downloads/"
 
+failed_urls = []
+
 def get_url(url: str) -> str:
+	global failed_urls
+	if not url in failed_urls:
+		failed_urls.append(url)
 	conn = http.client.HTTPSConnection("redirect.invidious.io")
 	conn.request("GET", "/")
 	response = conn.getresponse()
@@ -32,6 +37,11 @@ def get_url(url: str) -> str:
 	conn.close()
 	possible_list = list(map(lambda x: x.split(">")[-1], data.split("instances-list")[1].split("</ul>")[0].split("</a>")))
 	for possibility in possible_list:
+		if possibility == url:
+			continue
+		if possibility in failed_urls:
+			print("Skipping", possibility)
+			continue
 		print("Trying", possibility)
 		try:
 			conn = http.client.HTTPSConnection(possibility)
@@ -39,11 +49,33 @@ def get_url(url: str) -> str:
 			response = conn.getresponse()
 			conn.close()
 		except:
+			print("Exception while trying", url)
 			pass
 		print(response.status, response.reason)
 		if response.status in [200, 302]:
 			return possibility
+		elif not possibility in failed_urls:
+			failed_urls.append(possibility)
 	print("Could not find a valid server")
+	if len(failed_urls) > 0:
+		print("Retrying previously failed urls")
+		for possibility in failed_urls:
+			if possibility == url:
+				continue
+			print("Trying", possibility)
+			try:
+				conn = http.client.HTTPSConnection(possibility)
+				conn.request("GET", "/")
+				response = conn.getresponse()
+				conn.close()
+			except:
+				pass
+			print(response.status, response.reason)
+			if response.status in [200, 302]:
+				print(possibility, "to the rescue")
+				failed_urls.remove(possibility)
+				return possibility
+	print("All urls were exhausted, sorry")
 	raise KeyError()
 
 incomplete_read_count = 0
@@ -106,7 +138,7 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 	print("Download done")
 	return True
 
-def watch_for_changes(event, url, period):
+def watch_for_changes(event: threading.Event, url, period):
 	global channel_dict
 	global failed_downloads
 	global incomplete_read_count
@@ -119,8 +151,14 @@ def watch_for_changes(event, url, period):
 			if event.is_set():
 				return
 			conn.request("GET", "/playlist?list=" + channel)
-			response = conn.getresponse()
-			text = response.read().decode()
+			try:
+				response = conn.getresponse()
+				text = response.read().decode()
+			except Exception as e:
+				print(e)
+				conn.close()
+				url = get_url(url)
+				continue
 			while response.status != 200 and not event.is_set():
 				print(response.status, response.reason)
 				conn.close()
@@ -129,9 +167,12 @@ def watch_for_changes(event, url, period):
 				print("New URL:", url)
 				conn = http.client.HTTPSConnection(url)
 				print(url, "/playlist?list=" + channel)
-				conn.request("GET", "/playlist?list=" + channel)
-				response = conn.getresponse()
-				text = response.read().decode()
+				try:
+					conn.request("GET", "/playlist?list=" + channel)
+					response = conn.getresponse()
+					text = response.read().decode()
+				except Exception as e:
+					print(e)
 				conn.close()
 			videos = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
 			if len(videos.difference(channel_dict[channel])) != 0:
@@ -279,7 +320,7 @@ while True:
 	elif option == "4":
 		for channel in channel_dict:
 			print(channel)
-		channel_dict.remove(input("Channel to delete: "))
+		channel_dict.popitem(input("Channel to delete: "))
 	elif option == "5":
 		print("Current value:", should_download)
 		should_download = input("New value: ").lower() == "true"
