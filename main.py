@@ -95,15 +95,23 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 		print(e)
 		conn.close()
 		incomplete_read_count += 2
-		if incomplete_read_count >= incomplete_read_count:
+		if incomplete_read_count >= incomplete_read_reload:
 			incomplete_read_count = 0
 			url = get_url(url)
+		else:
+			print(f"({incomplete_read_count}/{incomplete_read_reload})")
 		return False
 	conn.close()
 	if response.status != 302:
 		print(response.status, payload)
 		print(response.read().decode())
 		print("Could not get the correct status code")
+		incomplete_read_count += 1
+		if incomplete_read_count >= incomplete_read_reload:
+			incomplete_read_count = 0
+			url = get_url(url)
+		else:
+			print(f"({incomplete_read_count}/{incomplete_read_reload})")
 		return False
 	print("Got the video url")
 	conn = http.client.HTTPSConnection(url, timeout=timeout)
@@ -133,6 +141,8 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 		if incomplete_read_count >= incomplete_read_reload:
 			incomplete_read_count = 0
 			url = get_url(url)
+		else:
+			print(f"({incomplete_read_count}/{incomplete_read_reload})")
 		return False
 	f.close()
 	print("Download done")
@@ -183,6 +193,8 @@ def watch_for_changes(event: threading.Event, url, period):
 					if incomplete_read_count >= incomplete_read_reload:
 						incomplete_read_count = 0
 						url = get_url(url)
+					else:
+						print(f"({incomplete_read_count}/{incomplete_read_reload})")
 					with open("err.log", "w", encoding="utf-8") as f:
 						f.write(text)
 					conn.close()
@@ -302,6 +314,7 @@ while True:
 	print("7: Read channel list from file")
 	print(f"8: Change resolution to download ({resolution})")
 	print(f"9: Change reattempts at failed downloads ({should_reattempt_failed_downloads})")
+	print(f"10: Change the base url ({base_url})")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -339,6 +352,8 @@ while True:
 		resolution = input("New resolution: ")
 	elif option == "9":
 		should_reattempt_failed_downloads = input("New value: ").lower() == "true"
+	elif option == "10":
+		base_url = input("New value: ")
 	elif option == "q":
 		break
 
