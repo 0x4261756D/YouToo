@@ -49,8 +49,8 @@ def get_url(url: str) -> str:
 			response = conn.getresponse()
 			conn.close()
 		except:
-			print("Exception while trying", url)
-			pass
+			print("Exception while trying", possibility)
+			continue
 		print(response.status, response.reason)
 		if response.status in [200, 302]:
 			return possibility
@@ -207,22 +207,25 @@ def watch_for_changes(event: threading.Event, url, period):
 						return
 					title = text.split(diff)[2].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
-					if should_download and not (diff in failed_downloads and should_reattempt_failed_downloads):
-						while response.status != 200 and "Download is disabled" in text:
-							print(response.status, response.reason)
-							conn.close()
-							print("Updating URL. Current URL:", url)
-							url = get_url(url)
-							print("New URL:", url)
-							conn = http.client.HTTPSConnection(url)
-							print(url, "/playlist?list=" + channel)
-							conn.request("GET", "/playlist?list=" + channel)
-							response = conn.getresponse()
-							conn.close()
-						if not download_video(conn, url, diff, title, channel_name, None):
-							if not diff in failed_downloads:
-								failed_downloads[diff] = (channel, title, channel_name)
-							continue
+					if should_download:
+						if diff in failed_downloads and should_reattempt_failed_downloads:
+							print("Skipping failed download")
+						else:
+							while response.status != 200 and "Download is disabled" in text:
+								print(response.status, response.reason)
+								conn.close()
+								print("Updating URL. Current URL:", url)
+								url = get_url(url)
+								print("New URL:", url)
+								conn = http.client.HTTPSConnection(url)
+								print(url, "/playlist?list=" + channel)
+								conn.request("GET", "/playlist?list=" + channel)
+								response = conn.getresponse()
+								conn.close()
+							if not download_video(conn, url, diff, title, channel_name, 600):
+								if not diff in failed_downloads:
+									failed_downloads[diff] = (channel, title, channel_name)
+								continue
 					channel_dict[channel].add(diff)
 			elif display_unchanged_things:
 				print("No updates found for", channel)
@@ -233,7 +236,7 @@ def watch_for_changes(event: threading.Event, url, period):
 			for failed in failed_downloads:
 				if event.is_set():
 					return
-				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2], 600):
+				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2], 60):
 					to_remove.append(failed)
 			for failed in to_remove:
 				print("removing", failed_downloads[failed])
