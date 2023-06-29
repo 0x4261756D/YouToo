@@ -35,21 +35,25 @@ def get_url(url: str) -> str:
 	response = conn.getresponse()
 	data = response.read().decode()
 	conn.close()
+	print(failed_urls)
 	possible_list = list(map(lambda x: x.split(">")[-1], data.split("instances-list")[1].split("</ul>")[0].split("</a>")))
 	for possibility in possible_list:
 		if possibility == url:
+			print("Skipping", possibility)
 			continue
 		if possibility in failed_urls:
 			print("Skipping", possibility)
 			continue
 		print("Trying", possibility)
 		try:
-			conn = http.client.HTTPSConnection(possibility)
-			conn.request("GET", "/")
+			conn = http.client.HTTPSConnection(possibility, timeout=20)
+			conn.request("GET", "/watch?v=dQw4w9WgXcQ")
 			response = conn.getresponse()
 			conn.close()
 		except:
 			print("Exception while trying", possibility)
+			if not possibility in failed_urls:
+				failed_urls.append(possibility)
 			continue
 		print(response.status, response.reason)
 		if response.status in [200, 302]:
