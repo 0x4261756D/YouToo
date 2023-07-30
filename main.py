@@ -28,8 +28,11 @@ failed_urls = []
 
 def get_url(url: str) -> str:
 	global failed_urls
+	print("searching for a replacement for", url)
 	if not url in failed_urls:
+		print("Appending", url, "to", failed_urls)
 		failed_urls.append(url)
+		print(failed_urls)
 	conn = http.client.HTTPSConnection("redirect.invidious.io")
 	conn.request("GET", "/")
 	response = conn.getresponse()
@@ -114,6 +117,7 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 		if incomplete_read_count >= incomplete_read_reload:
 			incomplete_read_count = 0
 			url = get_url(url)
+			print("New url:", url)
 		else:
 			print(f"({incomplete_read_count}/{incomplete_read_reload})")
 		return False
@@ -209,7 +213,18 @@ def watch_for_changes(event: threading.Event, url, period):
 				for diff in vid_diff:
 					if event.is_set():
 						return
-					title = text.split(diff)[2].split("</a>")[0].split("<p dir=\"auto\">")[1].split("</p>")[0].replace("&amp;", "&").replace("&#39;", "'")
+					print(diff)
+					if text.count(diff) < 3:
+						print("could not find two instances of", diff)
+						conn.close()
+						incomplete_read_count += 2
+						continue
+					part = list(filter(lambda g: not "\n" in g, map(lambda f: f.split("</p>")[0], filter(lambda e: e.count("</p>") >= 1, [item for sub_list in map(lambda d: d.split("<p dir=\"auto\">"), filter(lambda c: c.count("<p dir=\"auto\">") >= 1, [item for sub_list in map(lambda b: b.split("</a>"), filter(lambda a: a.count("</a>") >= 1, text.split(diff))) for item in sub_list])) for item in sub_list]))))
+					if not len(part) > 0:
+						print("COuld not find a title")
+						incomplete_read_count += 2
+						continue
+					title = part[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
 					if should_download:
 						if diff in failed_downloads and should_reattempt_failed_downloads:
