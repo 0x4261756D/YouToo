@@ -24,7 +24,7 @@ resolution = None
 display_unchanged_things = False
 download_folder = "downloads/"
 
-failed_urls = []
+failed_urls: list[str] = []
 
 def get_url(url: str) -> str:
 	global failed_urls
