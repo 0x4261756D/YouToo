@@ -219,12 +219,7 @@ def watch_for_changes(event: threading.Event, url, period):
 						conn.close()
 						incomplete_read_count += 2
 						continue
-					part = list(filter(lambda g: not "\n" in g, map(lambda f: f.split("</p>")[0], filter(lambda e: e.count("</p>") >= 1, [item for sub_list in map(lambda d: d.split("<p dir=\"auto\">"), filter(lambda c: c.count("<p dir=\"auto\">") >= 1, [item for sub_list in map(lambda b: b.split("</a>"), filter(lambda a: a.count("</a>") >= 1, text.split(diff))) for item in sub_list])) for item in sub_list]))))
-					if not len(part) > 0:
-						print("COuld not find a title")
-						incomplete_read_count += 2
-						continue
-					title = part[0].replace("&amp;", "&").replace("&#39;", "'")
+					title = text.split(diff)[3].split('p dir="auto">')[1].split('</p>')[0].replace("&amp;", "&").replace("&#39;", "'")
 					print("Title:", title)
 					if should_download:
 						if diff in failed_downloads and should_reattempt_failed_downloads:
