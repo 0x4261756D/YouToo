@@ -350,7 +350,7 @@ while True:
 	elif option == "4":
 		for channel in channel_dict:
 			print(channel)
-		channel_dict.popitem(input("Channel to delete: "))
+		del channel_dict[input("Channel to delete: ")]
 	elif option == "5":
 		print("Current value:", should_download)
 		should_download = input("New value: ").lower() == "true"
