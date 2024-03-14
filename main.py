@@ -88,6 +88,25 @@ def get_url(url: str) -> str:
 incomplete_read_count = 0
 incomplete_read_reload = 5
 
+def print_channels(url):
+	global channel_list
+	channels_to_delete = []
+	conn = http.client.HTTPSConnection(url)
+	for channel in channel_dict:
+		conn.request("GET", f"/channel/{channel}")
+		response = conn.getresponse()
+		if response.status != 200:
+			answer = input(f"Could not get a valid response for {channel}\nDelete it? (Yes/No)")
+			if answer == "Yes":
+				channels_to_delete.append(channel)
+			response.read()
+			continue
+		text = response.read().decode()
+		name = text.split('og:title" content="')[1].split('"')[0]
+		print(f"{channel}: {name}")
+	for channel in channels_to_delete:
+		del channel_dict[channel]
+
 def download_video(conn, url, video_url, title, channel_name, timeout: Optional[float]):
 	global failed_downloads
 	global incomplete_read_count
@@ -332,6 +351,7 @@ while True:
 	print(f"8: Change resolution to download ({resolution})")
 	print(f"9: Change reattempts at failed downloads ({should_reattempt_failed_downloads})")
 	print(f"10: Change the base url ({base_url})")
+	print("11: Print all channel names")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -371,6 +391,8 @@ while True:
 		should_reattempt_failed_downloads = input("New value: ").lower() == "true"
 	elif option == "10":
 		base_url = input("New value: ")
+	elif option == "11":
+		print_channels(base_url)
 	elif option == "q":
 		break
 
