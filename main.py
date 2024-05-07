@@ -413,7 +413,11 @@ f.write("|should_reattempt_failed_downloads=" + str(should_reattempt_failed_down
 if len(failed_downloads) > 0:
 	f.write(f"|failed_downloads=")
 	for failed in failed_downloads:
-		f.write(f"{failed}|{failed_downloads[failed]}%")
+		channel, title, channel_name = failed_downloads[failed]
+		channel = channel.replace('%', '_')
+		title = title.replace('%', '_')
+		channel_name = channel_name.replace('%', '_').strip()
+		f.write(f"{failed}|({channel}, {title}, {channel_name})%")
 	f.write("\n")
 if resolution:
 	f.write("|resolution=" + resolution + "\n")
