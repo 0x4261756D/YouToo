@@ -238,7 +238,7 @@ def watch_for_changes(event: threading.Event, url, period):
 						conn.close()
 						incomplete_read_count += 2
 						continue
-					title = text.split(diff)[3].split('p dir="auto">')[1].split('</p>')[0].replace("&amp;", "&").replace("&#39;", "'")
+					title = text.split(diff)[3].split('p dir="auto">')[1].split('</p>')[0].replace("&amp;", "&").replace("&#39;", "'").strip()
 					print("Title:", title)
 					if should_download:
 						if diff in failed_downloads and should_reattempt_failed_downloads:
@@ -255,10 +255,18 @@ def watch_for_changes(event: threading.Event, url, period):
 								conn.request("GET", "/playlist?list=" + channel)
 								response = conn.getresponse()
 								conn.close()
-							if not download_video(conn, url, diff, title, channel_name, 600):
-								if not diff in failed_downloads:
-									failed_downloads[diff] = (channel, title, channel_name)
+							conn.request('GET', f'/watch?v={diff}')
+							response = conn.getresponse()
+							vid_text = response.read().decode()
+							response.close()
+							if 'This live event will begin in' in vid_text:
+								print('Skipping', title, 'because the stream has not started yet')
 								continue
+							else:
+								if not download_video(conn, url, diff, title, channel_name, 600):
+									if not diff in failed_downloads:
+										failed_downloads[diff] = (channel, title, channel_name)
+									continue
 					channel_dict[channel].add(diff)
 			elif display_unchanged_things:
 				print("No updates found for", channel)
