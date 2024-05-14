@@ -6,25 +6,38 @@ import os
 import sys
 import datetime
 import re
-from typing import Optional
+import json
+from typing import Optional, TypedDict
 
-if not os.path.exists("settings.conf"):
-	open("settings.conf", "w").close()
-f = open("settings.conf", "r", encoding="utf-8")
-content = f.read().split("\n")
-f.close()
-channel_dict: dict = {}
-failed_downloads: dict[str, tuple[str, str, str]] = {}
+class Fail(TypedDict):
+	channel: str
+	title: str
+	channel_name: str
 
-period = -1
-base_url = None
-should_download = False
-should_reattempt_failed_downloads: bool = False
-resolution = None
-display_unchanged_things = False
-download_folder = "downloads/"
+class Settings(TypedDict):
+	period: int
+	base_url: str
+	display_unchanged_things: bool
+	download_folder: str
+	should_reattempt_failed_downloads: bool
+	resolution: str
+	should_download: bool
+	failed_downloads: dict[str, Fail]
+	tracked_channels: dict[str, list[str]]
 
+incomplete_read_count: int = 0
+incomplete_read_reload: int = 5
 failed_urls: list[str] = []
+
+path = 'settings.json'
+
+if not os.path.exists(path):
+	open(path, "w").close()
+with open(path, "r", encoding="utf-8") as f:
+	settings: Settings = json.loads(f.read())
+
+if settings["should_download"] and not os.path.exists(settings["download_folder"]):
+	os.mkdir(settings["download_folder"])
 
 def get_url(url: str) -> str:
 	global failed_urls
@@ -85,14 +98,11 @@ def get_url(url: str) -> str:
 	print("All urls were exhausted, sorry")
 	raise KeyError()
 
-incomplete_read_count = 0
-incomplete_read_reload = 5
-
 def print_channels(url):
-	global channel_list
+	global settings
 	channels_to_delete = []
 	conn = http.client.HTTPSConnection(url)
-	for channel in channel_dict:
+	for channel in settings['tracked_channels']:
 		conn.request("GET", f"/channel/{channel}")
 		response = conn.getresponse()
 		if response.status != 200:
@@ -105,13 +115,13 @@ def print_channels(url):
 		name = text.split('og:title" content="')[1].split('"')[0]
 		print(f"{channel}: {name}")
 	for channel in channels_to_delete:
-		del channel_dict[channel]
+		del settings['tracked_channels'][channel]
 
 def download_video(conn, url, video_url, title, channel_name, timeout: Optional[float]):
-	global failed_downloads
+	global settings
 	global incomplete_read_count
 	quality_string = '{"itag":18,"ext":"mp4"}'
-	if resolution == "720p":
+	if settings['resolution'] == "720p":
 		quality_string = '{"itag":22,"ext":"mp4"}'
 	payload = urllib.parse.urlencode({"id": video_url, "title": title, "download_widget": quality_string})
 	conn.request("POST", "/download", headers={"Content-Type": "application/x-www-form-urlencoded"}, body=payload)
@@ -146,7 +156,7 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 	print("Downloading")
 	response = conn.getresponse()
 	sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
-	folder_name = download_folder + str(datetime.date.fromtimestamp(time.time()).isoformat())
+	folder_name = settings['download_folder'] + str(datetime.date.fromtimestamp(time.time()).isoformat())
 	if not os.path.exists(folder_name):
 		os.mkdir(folder_name)
 	f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
@@ -175,16 +185,15 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 	print("Download done")
 	return True
 
-def watch_for_changes(event: threading.Event, url, period):
-	global channel_dict
-	global failed_downloads
+def watch_for_changes(event: threading.Event, url):
+	global settings
 	global incomplete_read_count
 	print("Looking for updates")
 	i = 1
 	while not event.is_set():
 		print(f"Starting to look now: {datetime.datetime.fromtimestamp(time.time())}")
 		conn = http.client.HTTPSConnection(url)
-		for channel in channel_dict:
+		for channel in settings['tracked_channels']:
 			if event.is_set():
 				return
 			conn.request("GET", "/playlist?list=" + channel)
@@ -212,7 +221,7 @@ def watch_for_changes(event: threading.Event, url, period):
 					print(e)
 				conn.close()
 			videos = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
-			if len(videos.difference(channel_dict[channel])) != 0:
+			if len(videos.difference(settings['tracked_channels'][channel])) != 0:
 				print("UPDATE FOUND:", channel)
 				if len(text.split('class="channel-name"')) < 2:
 					print("Could not find a title")
@@ -226,9 +235,9 @@ def watch_for_changes(event: threading.Event, url, period):
 						f.write(text)
 					conn.close()
 					continue
-				channel_name = text.split('class="channel-name"')[1].split("</p>")[0].split(">")[1]
-				print("Channel:", channel_name)
-				vid_diff = list(filter(lambda x: not x in channel_dict[channel], videos))
+				channel_name = text.split('class="channel-name"')[1].split("</p>")[0].split(">")[1].strip()
+				print("Channel:", channel_name, '|')
+				vid_diff = list(filter(lambda x: not x in settings['tracked_channels'][channel], videos))
 				for diff in vid_diff:
 					if event.is_set():
 						return
@@ -240,8 +249,8 @@ def watch_for_changes(event: threading.Event, url, period):
 						continue
 					title = text.split(diff)[3].split('p dir="auto">')[1].split('</p>')[0].replace("&amp;", "&").replace("&#39;", "'").strip()
 					print("Title:", title)
-					if should_download:
-						if diff in failed_downloads and should_reattempt_failed_downloads:
+					if settings['should_download']:
+						if diff in settings['failed_downloads']:
 							print("Skipping failed download")
 						else:
 							while response.status != 200 and "Download is disabled" in text:
@@ -264,165 +273,105 @@ def watch_for_changes(event: threading.Event, url, period):
 								continue
 							else:
 								if not download_video(conn, url, diff, title, channel_name, 600):
-									if not diff in failed_downloads:
-										failed_downloads[diff] = (channel, title, channel_name)
+									if not diff in settings['failed_downloads']:
+										settings['failed_downloads'][diff] = Fail(channel=channel, title=title, channel_name=channel_name)
 									continue
-					channel_dict[channel].add(diff)
-			elif display_unchanged_things:
+					settings['tracked_channels'][channel].append(diff)
+			elif settings['display_unchanged_things']:
 				print("No updates found for", channel)
-		if should_reattempt_failed_downloads and len(failed_downloads) > 0:
+		if settings['should_reattempt_failed_downloads'] and len(settings['failed_downloads']) > 0:
 			print("reattempting failed previous attempts")
 			to_remove = []
-			print("before:", len(failed_downloads))
-			for failed in failed_downloads:
+			print("before:", len(settings['failed_downloads']))
+			for failed in settings['failed_downloads']:
+				print(f"Reattempting {settings['failed_downloads'][failed]}")
 				if event.is_set():
 					return
-				if download_video(conn, url, failed, failed_downloads[failed][1], failed_downloads[failed][2], 60):
+				if download_video(conn, url, video_url=failed, title=settings['failed_downloads'][failed]['title'], channel_name=settings['failed_downloads'][failed]['channel_name'], timeout=60):
 					to_remove.append(failed)
 			for failed in to_remove:
-				print("removing", failed_downloads[failed])
-				channel_dict[failed_downloads[failed][0]].add(failed)
-				failed_downloads.pop(failed)
-			print("after:", len(failed_downloads))
+				print("removing", settings['failed_downloads'][failed])
+				settings['tracked_channels'][settings['failed_downloads'][failed]['channel']].append(failed)
+				settings['failed_downloads'].pop(failed)
+			print("after:", len(settings['failed_downloads']))
 			print("done reattempting")
 		i += 1
 		conn.close()
-		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + period))
-		event.wait(period)
+		print("checked", i, "times, next update: ", datetime.datetime.fromtimestamp(time.time() + settings['period']))
+		event.wait(settings['period'])
 	return url
 
-for line in content:
-	if line == "":
-		continue
-	if line.startswith("|"):
-		if line.startswith("|period="):
-			period = int(line.split("=")[1])
-		elif line.startswith("|base_url="):
-			base_url = line.split("=")[1]
-		elif line.startswith("|should_download="):
-			should_download = line.split("=")[1] == "True"
-		elif line.startswith("|resolution"):
-			resolution = line.split("=")[1]
-		elif line.startswith("|display_unchanged_things"):
-			display_unchanged_things = line.split("=")[1] == "True"
-		elif line.startswith("|download_folder"):
-			download_folder = line.split("=")[1]
-		elif line.startswith("|should_reattempt_failed_downloads"):
-			should_reattempt_failed_downloads = line.split("=")[1] == "True"
-		elif line.startswith("|failed_downloads"):
-			for failed in line.split("=")[1].split("%")[:-1]:
-				if len(failed.split("|")) < 2:
-					raise KeyError()
-				failed_parts = failed.split("|")
-				failed_val = "|".join(failed_parts[1:]).split(", ")
-				print(failed_val)
-				failed_downloads[failed_parts[0]] = (failed_val[0][2:-1], failed_val[1][1:-1], failed_val[2][1:-2])
-	else:
-		tup = line.split("|")
-		if len(tup) != 2 or tup[0] in channel_dict:
-			print(tup)
-			raise KeyError()
-		channel_dict[tup[0]] = set(tup[1].split("&"))
-
 def add_channel(id):
-	global channel_dict
-	if id in channel_dict:
+	global settings
+	if id in settings['tracked_channels']:
 		print("Channel already exists")
 		raise KeyError()
 	conn = http.client.HTTPSConnection(base_url)
 	conn.request("GET", "/playlist?list=" + id)
 	text = conn.getresponse().read().decode()
-	channel_dict[id] = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
-#	channel_dict[id] = list(filter(lambda y: not "&" in y and not "DOCTYPE" in y, map(lambda x: x.split("\"")[0], conn.getresponse().read().decode().split("href=\"/watch?v="))))
+	settings['tracked_channels'][id] = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
 
-
-if period == -1:
-	period = 5
-if not base_url:
-	base_url = "vid.puffyan.us"
-if should_download and not os.path.exists(download_folder):
-	os.mkdir(download_folder)
 
 while True:
 	print("Currently tracked channels:")
-	for channel in channel_dict:
+	for channel in settings['tracked_channels']:
 		print(channel)
 	print("---------------------------")
-	print("Current instance:", base_url)
-	print("1: Start watching for changes every", period, "seconds")
-	print(f"2: Change period ({period})")
+	print("Current instance:", settings['base_url'])
+	print("1: Start watching for changes every", settings['period'], "seconds")
+	print(f"2: Change period ({settings['period']})")
 	print("3: Add a channel")
 	print("4: Remove a channel")
-	print(f"5: Change downloading status ({should_download})")
-	print(f"6: Change displaying unchanged things ({display_unchanged_things})")
+	print(f"5: Change downloading status ({settings['should_download']})")
+	print(f"6: Change displaying unchanged things ({settings['display_unchanged_things']})")
 	print("7: Read channel list from file")
-	print(f"8: Change resolution to download ({resolution})")
-	print(f"9: Change reattempts at failed downloads ({should_reattempt_failed_downloads})")
-	print(f"10: Change the base url ({base_url})")
+	print(f"8: Change resolution to download ({settings['resolution']})")
+	print(f"9: Change reattempts at failed downloads ({settings['should_reattempt_failed_downloads']})")
+	print(f"10: Change the base url ({settings['base_url']})")
 	print("11: Print all channel names")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
 		event = threading.Event()
-		thread = threading.Thread(target = watch_for_changes, args=(event, base_url, period))
+		thread = threading.Thread(target = watch_for_changes, args=(event, settings['base_url']))
 		thread.start()
 		input("Press any key to interrupt\n")
 		print("STOPPING")
 		event.set()
 	elif option == "2":
-		print("Current period:", period)
-		period = int(input("New period in seconds: "))
+		print("Current period:", settings['period'])
+		settings['period'] = int(input("New period in seconds: "))
 	elif option == "3":
 		id = input("New channel's id: ")
 		add_channel(id)
 	elif option == "4":
-		for channel in channel_dict:
+		for channel in settings['tracked_channels']:
 			print(channel)
-		del channel_dict[input("Channel to delete: ")]
+		del settings['tracked_channels'][input("Channel to delete: ")]
 	elif option == "5":
-		print("Current value:", should_download)
-		should_download = input("New value: ").lower() == "true"
+		print("Current value:", settings['should_download'])
+		settings['should_download'] = input("New value: ").lower() == "true"
 	elif option == "6":
-		print("Current value:", display_unchanged_things)
-		display_unchanged_things = input("New value: ") == "true"
+		print("Current value:", settings['display_unchanged_things'])
+		settings['display_unchanged_things'] = input("New value: ") == "true"
 	elif option == "7":
 		fname = input("File location: ")
 		if not os.path.exists(fname):
 			print("File does not exist")
 		else:
-			channel_list = open(fname).readlines()
-			for channel in channel_list:
+			channels = open(fname).readlines()
+			for channel in channels:
 				add_channel(channel.split(" ")[0].replace("\n", ""))
 	elif option == "8":
-		resolution = input("New resolution: ")
+		settings['resolution'] = input("New resolution: ")
 	elif option == "9":
-		should_reattempt_failed_downloads = input("New value: ").lower() == "true"
+		settings['should_reattempt_failed_downloads'] = input("New value: ").lower() == "true"
 	elif option == "10":
-		base_url = input("New value: ")
+		settings['base_url'] = input("New value: ")
 	elif option == "11":
-		print_channels(base_url)
+		print_channels(settings['base_url'])
 	elif option == "q":
 		break
 
-f = open("settings.conf", "w", encoding="utf-8")
-f.write("|period=" + str(period) + "\n")
-f.write("|base_url=" + base_url + "\n")
-f.write("|display_unchanged_things=" + str(display_unchanged_things) + "\n")
-f.write("|download_folder=" + str(download_folder) + "\n")
-f.write("|should_reattempt_failed_downloads=" + str(should_reattempt_failed_downloads) + "\n")
-if len(failed_downloads) > 0:
-	f.write(f"|failed_downloads=")
-	for failed in failed_downloads:
-		channel, title, channel_name = failed_downloads[failed]
-		channel = channel.replace('%', '_')
-		title = title.replace('%', '_')
-		channel_name = channel_name.replace('%', '_').strip()
-		f.write(f"{failed}|({channel}, {title}, {channel_name})%")
-	f.write("\n")
-if resolution:
-	f.write("|resolution=" + resolution + "\n")
-f.write("|should_download=" + str(should_download) + "\n")
-for channel in channel_dict:
-	f.write(channel + "|" + "&".join(channel_dict[channel]) + "\n")
-
-f.close()
+with open(path, 'w', encoding='utf-8') as f:
+	f.write(json.dumps(settings))
