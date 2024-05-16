@@ -33,8 +33,11 @@ path = 'settings.json'
 
 if not os.path.exists(path):
 	open(path, "w").close()
-with open(path, "r", encoding="utf-8") as f:
-	settings: Settings = json.loads(f.read())
+try:
+	with open(path, "r", encoding="utf-8") as f:
+		settings: Settings = json.loads(f.read())
+except Exception as e:
+	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads", should_reattempt_failed_downloads=True, resolution="720p", should_download=True, failed_downloads={}, tracked_channels={})
 
 if settings["should_download"] and not os.path.exists(settings["download_folder"]):
 	os.mkdir(settings["download_folder"])
@@ -98,9 +101,9 @@ def get_url(url: str) -> str:
 	print("All urls were exhausted, sorry")
 	raise KeyError()
 
-def print_channels(url):
+def print_channels(url: str):
 	global settings
-	channels_to_delete = []
+	channels_to_delete: list[str] = []
 	conn = http.client.HTTPSConnection(url)
 	for channel in settings['tracked_channels']:
 		conn.request("GET", f"/channel/{channel}")
@@ -309,7 +312,7 @@ def add_channel(id):
 	conn = http.client.HTTPSConnection(settings['base_url'])
 	conn.request("GET", "/playlist?list=" + id)
 	text = conn.getresponse().read().decode()
-	settings['tracked_channels'][id] = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
+	settings['tracked_channels'][id] = list(set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:]))
 
 
 while True:
