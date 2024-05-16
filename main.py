@@ -306,7 +306,7 @@ def add_channel(id):
 	if id in settings['tracked_channels']:
 		print("Channel already exists")
 		raise KeyError()
-	conn = http.client.HTTPSConnection(base_url)
+	conn = http.client.HTTPSConnection(settings['base_url'])
 	conn.request("GET", "/playlist?list=" + id)
 	text = conn.getresponse().read().decode()
 	settings['tracked_channels'][id] = set(list(map(lambda x: x.split("&list=")[0], text.split('href="/watch?v=')))[1:])
