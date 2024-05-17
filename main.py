@@ -37,7 +37,7 @@ try:
 	with open(path, "r", encoding="utf-8") as f:
 		settings: Settings = json.loads(f.read())
 except Exception as e:
-	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads", should_reattempt_failed_downloads=True, resolution="720p", should_download=True, failed_downloads={}, tracked_channels={})
+	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, resolution="720p", should_download=True, failed_downloads={}, tracked_channels={})
 
 if settings["should_download"] and not os.path.exists(settings["download_folder"]):
 	os.mkdir(settings["download_folder"])
@@ -159,7 +159,7 @@ def download_video(conn, url, video_url, title, channel_name, timeout: Optional[
 	print("Downloading")
 	response = conn.getresponse()
 	sanitized_title = re.sub(r'\W+', '_', channel_name).removesuffix("_") + "-" + re.sub(r'\W+', '_', title).removesuffix("_")
-	folder_name = settings['download_folder'] + str(datetime.date.fromtimestamp(time.time()).isoformat())
+	folder_name = os.path.join(settings['download_folder'], str(datetime.date.fromtimestamp(time.time()).isoformat()))
 	if not os.path.exists(folder_name):
 		os.mkdir(folder_name)
 	f = open(folder_name + "/" + sanitized_title + ".mp4", "wb")
