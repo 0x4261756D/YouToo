@@ -134,41 +134,49 @@ def download_video(vid_id: str, timeout: Optional[int]) -> bool:
 			os.mkdir(folder_name)
 		if response.status_code == 404:
 			print("\tCould not download in 720p, trying to splice")
-			payload = {'itag': '399', 'id': vid_id, 'local': 'true'}
+			payload = {'itag': '140', 'id': vid_id, 'local': 'true'}
 			response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
 			if response.status_code == 200:
 				read_size = 0
 				with open('tmp.mp4', 'wb') as f:
-					for chunk in response.iter_content(chunk_size=1024):
+					for chunk in response.iter_content(chunk_size=1024*1024):
 						f.write(chunk)
 						read_size += 1
-						print(f'\x0d\t\t{read_size}kiB', end='')
-				print()
-				print("\tDownloaded video only")
-				payload = {'itag': '140', 'id': vid_id, 'local': 'true'}
-				response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
-				read_size = 0
-				with open('tmp.mp4a', 'wb') as f:
-					for chunk in response.iter_content(chunk_size=1024):
-						f.write(chunk)
-						read_size += 1
-						print(f'\x0d\t\t{read_size}kiB', end='')
+						print(f'\x0d\t\t{read_size}MiB', end='')
 				print()
 				print("\tDownloaded audio only")
-				subprocess.run(['ffmpeg', '-i', 'tmp.mp4', '-i', 'tmp.mp4a', '-c', 'copy', os.path.join(folder_name, sanitized_name)], capture_output=False)
-				return True
-			else:
-				print("\tCould not splice, trying in 360p")
-				payload = {'itag': '18', 'id': vid_id, 'local': 'true'}
-				response = requests.get(f'https://{url}/latest_version', params=payload)
+				payload = {'itag': '399', 'id': vid_id, 'local': 'true'}
+				response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
 				if response.status_code != 200:
-					return False
+					payload = {'itag': '299', 'id': vid_id, 'local': 'true'}
+					response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
+					if response.status_code != 200:
+						payload = {'itag': '298', 'id': vid_id, 'local': 'true'}
+						response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
+				if response.status_code == 200:
+					read_size = 0
+					with open('tmp.mp4a', 'wb') as f:
+						for chunk in response.iter_content(chunk_size=1024*1024):
+							f.write(chunk)
+							read_size += 1
+							print(f'\x0d\t\t{read_size}MiB', end='')
+					print()
+					print("\tDownloaded video only")
+					if subprocess.run(['ffmpeg', '-y', '-i', 'tmp.mp4', '-i', 'tmp.mp4a', '-c', 'copy', os.path.join(folder_name, sanitized_name)], capture_output=False).returncode == 0:
+						os.remove('tmp.mp4')
+						os.remove('tmp.mp4a')
+						return True
+			print("\tCould not splice, trying in 360p")
+			payload = {'itag': '18', 'id': vid_id, 'local': 'true'}
+			response = requests.get(f'https://{url}/latest_version', params=payload)
+			if response.status_code != 200:
+				return False
 		read_size = 0
 		with open(os.path.join(folder_name, sanitized_name), 'wb') as f:
-			for chunk in response.iter_content(chunk_size=1024):
+			for chunk in response.iter_content(chunk_size=1024*1024):
 				f.write(chunk)
 				read_size += 1
-				print(f'\x0d\t\t{read_size}kiB', end='')
+				print(f'\x0d\t\t{read_size}MiB', end='')
 		print()
 	except Exception as e:
 		print(e)
