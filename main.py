@@ -115,6 +115,17 @@ def update_incomplete_read_count():
 	else:
 		print(f'({incomplete_read_count}/{incomplete_read_reload})')
 
+def write_response(path: str, response: requests.Response):
+	read_size = 0
+	start_time = time.time()
+	with open(path, 'wb') as f:
+		for chunk in response.iter_content():
+			f.write(chunk)
+			read_size += len(chunk)
+			if read_size % 102400 == 0:
+				print(f'\x0d\t\t{read_size//1024}kiB ({read_size//(time.time() - start_time)//1024}kiB/s)', end='')
+		print()
+
 def download_video(vid_id: str, timeout: Optional[int]) -> bool:
 	global settings
 	itag = "22"
@@ -137,13 +148,7 @@ def download_video(vid_id: str, timeout: Optional[int]) -> bool:
 			payload = {'itag': '140', 'id': vid_id, 'local': 'true'}
 			response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
 			if response.status_code == 200:
-				read_size = 0
-				with open('tmp.mp4', 'wb') as f:
-					for chunk in response.iter_content(chunk_size=1024*1024):
-						f.write(chunk)
-						read_size += 1
-						print(f'\x0d\t\t{read_size}MiB', end='')
-				print()
+				write_response(path='tmp.mp4', response=response)
 				print("\tDownloaded audio only")
 				payload = {'itag': '399', 'id': vid_id, 'local': 'true'}
 				response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
@@ -154,13 +159,7 @@ def download_video(vid_id: str, timeout: Optional[int]) -> bool:
 						payload = {'itag': '298', 'id': vid_id, 'local': 'true'}
 						response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
 				if response.status_code == 200:
-					read_size = 0
-					with open('tmp.mp4a', 'wb') as f:
-						for chunk in response.iter_content(chunk_size=1024*1024):
-							f.write(chunk)
-							read_size += 1
-							print(f'\x0d\t\t{read_size}MiB', end='')
-					print()
+					write_response(path='tmp.mp4a', response=response)
 					print("\tDownloaded video only")
 					if subprocess.run(['ffmpeg', '-y', '-i', 'tmp.mp4', '-i', 'tmp.mp4a', '-c', 'copy', os.path.join(folder_name, sanitized_name)], capture_output=False).returncode == 0:
 						os.remove('tmp.mp4')
@@ -170,14 +169,10 @@ def download_video(vid_id: str, timeout: Optional[int]) -> bool:
 			payload = {'itag': '18', 'id': vid_id, 'local': 'true'}
 			response = requests.get(f'https://{url}/latest_version', params=payload)
 			if response.status_code != 200:
+				print("Could not download")
 				return False
 		read_size = 0
-		with open(os.path.join(folder_name, sanitized_name), 'wb') as f:
-			for chunk in response.iter_content(chunk_size=1024*1024):
-				f.write(chunk)
-				read_size += 1
-				print(f'\x0d\t\t{read_size}MiB', end='')
-		print()
+		write_response(path=os.path.join(folder_name, sanitized_name), response=response)
 	except Exception as e:
 		print(e)
 		update_incomplete_read_count()
