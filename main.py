@@ -65,7 +65,7 @@ def download_videos(id_list: set[str]) -> bool:
 	try:
 		with yt_dlp.YoutubeDL(options) as ydl:
 			error_code = ydl.download(id_list)
-			if error_code is not None:
+			if error_code != 0:
 				print(error_code)
 				return False
 			return True
