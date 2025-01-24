@@ -1,4 +1,3 @@
-import requests
 import subprocess
 import time
 import threading
@@ -8,6 +7,10 @@ import datetime
 import re
 import json
 from typing import Optional, TypedDict
+import innertube
+import random
+import httpx
+import yt_dlp
 
 class Settings(TypedDict):
 	period: int
@@ -16,14 +19,12 @@ class Settings(TypedDict):
 	download_folder: str
 	should_reattempt_failed_downloads: bool
 	should_download: bool
-	failed_downloads: list[str]
+	failed_downloads: set[str]
 	tracked_channels: dict[str, list[str]]
 
-incomplete_read_count: int = 0
-incomplete_read_reload: int = 5
-failed_urls: list[str] = []
-
 path = 'settings.json'
+
+client = innertube.InnerTube("WEB", proxies="socks5://127.0.0.1:9050")
 
 if not os.path.exists(path):
 	open(path, "w").close()
@@ -31,158 +32,49 @@ try:
 	with open(path, "r", encoding="utf-8") as f:
 		settings: Settings = json.loads(f.read())
 except Exception as e:
-	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, should_download=True, failed_downloads=[], tracked_channels={})
+	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, should_download=True, failed_downloads=set(), tracked_channels={})
 
 if settings["should_download"] and not os.path.exists(settings["download_folder"]):
 	os.mkdir(settings["download_folder"])
 
 url: str = settings['base_url']
 
-def update_url():
-	global url
-	global failed_urls
-	print("searching for a replacement for", url)
-	if not url in failed_urls:
-		print("Appending", url, "to", failed_urls)
-		failed_urls.append(url)
-		print(failed_urls)
-	data = requests.get(f'https://redirect.invidious.io').text
-	print(failed_urls)
-	possible_list = list(map(lambda x: x.split(">")[-1], data.split("instances-list")[1].split("</ul>")[0].split("</a>")))
-	for possibility in possible_list:
-		if possibility == url:
-			print("Skipping", possibility)
-			continue
-		if possibility in failed_urls:
-			print("Skipping", possibility)
-			continue
-		print("Trying", possibility)
-		try:
-			response = requests.get(f'https://{url}/watch?v=dQw4w9WgXcQ', timeout=20)
-		except:
-			print("Exception while trying", possibility)
-			if not possibility in failed_urls:
-				failed_urls.append(possibility)
-			continue
-		print(response.status_code, response.reason)
-		if response.status_code in [200, 302]:
-			url = possibility
-			return
-		elif not possibility in failed_urls:
-			failed_urls.append(possibility)
-	print("Could not find a valid server")
-	if len(failed_urls) > 0:
-		print("Retrying previously failed urls")
-		for possibility in failed_urls:
-			if possibility == url:
-				continue
-			print("Trying", possibility)
-			try:
-				response = requests.get(url)
-			except:
-				pass
-			print(response.status_code, response.reason)
-			if response.status_code in [200, 302]:
-				print(possibility, "to the rescue")
-				failed_urls.remove(possibility)
-				url = possibility
-				return
-	print("All urls were exhausted, sorry")
-	raise KeyError()
-
 def print_channels(url: str):
 	global settings
 	channels_to_delete: list[str] = []
 	for channel in settings['tracked_channels']:
-		response = requests.get(f'https://{url}/api/v1/channels/{channel}')
-		if response.status_code != 200:
-			answer = input(f'Could not get a valid response for {channel}\nDelete it? (Yes/No)')
-			if answer == 'Yes':
-				channels_to_delete.append(channel)
-			continue
-		j = response.json()
-		name = j['author']
-		print(f'{channel}: {name}')
+		retry = True
+		while retry:
+			retry = False
+			time.sleep(random.randint(0, 3))
+			try:
+				response = client.browse(channel)
+				print(f'{channel}: {response["metadata"]["channelMetadataRenderer"]["title"]}')
+			except:
+				print(f'Could not get info for {channel}.')
+				answer = input('Press `r` to retry, `d` to delete.')
+				if answer == 'd':
+					channels_to_delete.append(channel)
+				else:
+					retry = answer == 'r'
 	for channel in channels_to_delete:
 		del settings['tracked_channels'][channel]
 
-def update_incomplete_read_count():
-	global incomplete_read_count
-	incomplete_read_count += 2
-	if incomplete_read_count >= incomplete_read_reload:
-		incomplete_read_count = 0
-		update_url()
-	else:
-		print(f'({incomplete_read_count}/{incomplete_read_reload})')
-
-def write_response(path: str, response: requests.Response):
-	read_size = 0
-	start_time = time.time()
-	with open(path, 'wb') as f:
-		for chunk in response.iter_content():
-			f.write(chunk)
-			read_size += len(chunk)
-			if read_size % 102400 == 0:
-				print(f'\x0d\t\t{read_size//1024}kiB ({read_size//(time.time() - start_time)//1024}kiB/s)', end='')
-		print()
-
-def download_video(vid_id: str, timeout: Optional[int]) -> bool:
-	global settings
-	itag = "22"
+def download_videos(id_list: set[str]) -> bool:
+	options = {'proxy': 'socks5://127.0.0.1:9050', 'outtmpl': 'downloads/%(timestamp)s_%(id)s.%(ext)s'}
 	try:
-		vid_info = requests.get(f'https://{url}/api/v1/videos/{vid_id}').json()
-		if vid_info['liveNow'] or vid_info['isUpcoming']:
-			return False
-		sanitized_name = re.sub(r'\W+', '_', f'{vid_info["author"]}-{vid_info["title"]}').removesuffix('_') + '.mp4'
-		print('\tDownloading')
-		payload = {'itag': itag, 'id': vid_id, 'local': 'true'}
-		response = requests.get(f'https://{url}/latest_version', params=payload)
-		if response.status_code not in [200, 404]:
-			update_incomplete_read_count()
-			return False
-		folder_name = os.path.join(settings['download_folder'], str(datetime.date.fromtimestamp(time.time()).isoformat()))
-		if not os.path.exists(folder_name):
-			os.mkdir(folder_name)
-		if response.status_code == 404:
-			print("\tCould not download in 720p, trying to splice")
-			payload = {'itag': '140', 'id': vid_id, 'local': 'true'}
-			response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
-			if response.status_code == 200:
-				write_response(path='tmp.mp4', response=response)
-				print("\tDownloaded audio only")
-				payload = {'itag': '399', 'id': vid_id, 'local': 'true'}
-				response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
-				if response.status_code != 200:
-					payload = {'itag': '299', 'id': vid_id, 'local': 'true'}
-					response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
-					if response.status_code != 200:
-						payload = {'itag': '298', 'id': vid_id, 'local': 'true'}
-						response = requests.get(f'https://{url}/latest_version', params=payload, stream=True)
-				if response.status_code == 200:
-					write_response(path='tmp.mp4a', response=response)
-					print("\tDownloaded video only")
-					if subprocess.run(['ffmpeg', '-y', '-i', 'tmp.mp4', '-i', 'tmp.mp4a', '-c', 'copy', os.path.join(folder_name, sanitized_name)], capture_output=False).returncode == 0:
-						os.remove('tmp.mp4')
-						os.remove('tmp.mp4a')
-						return True
-			print("\tCould not splice, trying in 360p")
-			payload = {'itag': '18', 'id': vid_id, 'local': 'true'}
-			response = requests.get(f'https://{url}/latest_version', params=payload)
-			if response.status_code != 200:
-				print("Could not download")
+		with yt_dlp.YoutubeDL(options) as ydl:
+			error_code = ydl.download(id_list)
+			if error_code is not None:
+				print(error_code)
 				return False
-		read_size = 0
-		write_response(path=os.path.join(folder_name, sanitized_name), response=response)
+			return True
 	except Exception as e:
 		print(e)
-		update_incomplete_read_count()
 		return False
-	print('\tDownload done')
-	return True
 
 def watch_for_changes(event: threading.Event):
 	global settings
-	global incomplete_read_count
 	print('Looking for updates')
 	i = 0
 	while not event.is_set():
@@ -190,52 +82,60 @@ def watch_for_changes(event: threading.Event):
 		for channel in settings['tracked_channels']:
 			if event.is_set():
 				return
+			event.wait(random.random() * 5)
 			try:
-				response = requests.get(f'https://{url}/api/v1/playlists/{channel}')
-				playlist_json = response.json()
+				response = client.browse(f"VLUU{channel[2:]}")
 			except Exception as e:
 				print(e)
-				update_url()
 				continue
-			if response.status_code != 200:
-				continue
-			diffs = list(filter(lambda x: x['videoId'] not in settings['tracked_channels'][channel], playlist_json['videos']))
+			*videos, continuation = response['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents'][0]['playlistVideoListRenderer']['contents']
+			diffs = list(filter(lambda x: x['playlistVideoRenderer']['videoId'] not in settings['tracked_channels'][channel], videos))
 			if len(diffs) != 0:
-				diffs.reverse()
-				print(f'UPDATE FOUND IN CHANNEL {playlist_json["author"]} ({playlist_json["authorId"]})')
+				print(f"{len(diffs)} UPDATE(S) FOUND IN CHANNEL {response['header']['playlistHeaderRenderer']['ownerText']['runs'][0]['text']} ({channel})")
 				for diff in diffs:
 					if event.is_set():
 						return
-					print(f'{diff["title"]} ({diff["videoId"]})')
-					video_id = diff['videoId']
-					if settings['should_download']:
-						if video_id in settings['failed_downloads']:
-							print('Skipping failed downloads')
-						else:
-							if not download_video(vid_id=video_id, timeout=600):
-								if not video_id in settings['failed_downloads']:
-									settings['failed_downloads'].append(video_id)
-								continue
+					title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
+					video_id = diff['playlistVideoRenderer']['videoId']
+					print(f"{title} ({video_id})")
 					settings['tracked_channels'][channel].append(video_id)
+				if settings['should_download']:
+					ids = set(map(lambda x: x['playlistVideoRenderer']['videoId'], diffs))
+					print(f"Now downloading {ids}")
+					if not download_videos(ids):
+						settings.setdefault('failed_downloads', set())
+						settings['failed_downloads'].update(ids)
+				while len(diffs) != 0 and 'continuationItemRenderer' in continuation.keys():
+					continuation_token = continuation['continuationItemRenderer']['continuationEndpoint']['continuationCommand']['token']
+					event.wait(random.random() * 5)
+					try:
+						more = client.browse(continuation=continuation_token)
+					except Exception as e:
+						print(e)
+						break
+					*videos, continuation = more['onResponseReceivedActions'][0]['appendContinuationItemsAction']['continuationItems']
+					diffs = list(filter(lambda x: x['playlistVideoRenderer']['videoId'] not in settings['tracked_channels'][channel], videos))
+					if len(diffs) == 0:
+						break
+					print(f"{len(diffs)} MORE UPDATES FOUND")
+					if event.is_set():
+						return
+					for video in diffs:
+						title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
+						video_id = diff['playlistVideoRenderer']['videoId']
+						print(f"{title} ({video_id})")
+						settings['tracked_channels'][channel].append(video_id)
+					if settings['should_download']:
+						print(f"Now downloading {ids}")
+						ids = set(map(lambda x: x['playlistVideoRenderer']['videoId'], diffs))
+						if not download_videos(ids):
+							settings['failed_downloads'].update(ids)
 			elif settings['display_unchanged_things']:
-				print("No updates found for", channel)
-		if settings['should_reattempt_failed_downloads'] and len(settings['failed_downloads']) > 0:
-			print('Reattempting failed downloads')
-			to_remove = []
-			print('before:', len(settings['failed_downloads']))
-			for failed in settings['failed_downloads']:
-				print(f'Reattempting {failed}')
-				if event.is_set():
-					return
-				if download_video(failed, timeout=60):
-					to_remove.append(failed)
-			for failed in to_remove:
-				video_info = requests.get(f'https://{url}/api/v1/videos/{failed}').json()
-				print(f"Removing {video_info['title']} ({failed}) by {video_info['author']}")
-				settings['tracked_channels'][video_info['authorId']].append(failed)
-				settings['failed_downloads'].remove(failed)
-			print('after:', len(settings['failed_downloads']))
-			print('Done reattempting')
+				print(f"No updates found for {channel}")
+		if settings['should_download'] and settings['should_reattempt_failed_downloads'] and len(settings['failed_downloads']) > 0:
+			print(f'Reattempting {len(settings["failed_downloads"])} failed downloads')
+			if download_videos(settings['failed_downloads']):
+				settings['failed_downloads'].clear()
 		i += 1
 		print(f"Checked {i} times, next update: {datetime.datetime.fromtimestamp(time.time() + settings['period'])}")
 		event.wait(settings['period'])
@@ -243,9 +143,36 @@ def watch_for_changes(event: threading.Event):
 def add_channel(channel_id):
 	global settings
 	if channel_id in settings['tracked_channels']:
+		print(f"{channel_id} was already tracked")
 		return
-	channel_json = requests.get(f'https://{url}/api/v1/playlists/{channel_id}').json()
-	settings['tracked_channels'][channel_id] = list(set(list(map(lambda x: x['videoId'], channel_json['videos']))))
+	try:
+		response = client.browse(f"VLUU{channel_id[2:]}")
+	except Exception as e:
+		print(e)
+	*videos, continuation = response['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents'][0]['playlistVideoListRenderer']['contents']
+	settings['tracked_channels'][channel_id] = []
+	for video in videos:
+		title = video['playlistVideoRenderer']['title']['runs'][0]['text']
+		video_id = video['playlistVideoRenderer']['videoId']
+		print(f"{title} ({video_id})")
+		settings['tracked_channels'][channel_id].append(video_id)
+	while len(videos) != 0 and 'continuationItemRenderer' in continuation.keys():
+		continuation_token = continuation['continuationItemRenderer']['continuationEndpoint']['continuationCommand']['token']
+		time.sleep(random.random() * 3)
+		try:
+			more = client.browse(continuation=continuation_token)
+		except Exception as e:
+			print(e)
+			break
+		*videos, continuation = more['onResponseReceivedActions'][0]['appendContinuationItemsAction']['continuationItems']
+		videos = list(filter(lambda x: x['playlistVideoRenderer']['videoId'] not in settings['tracked_channels'][channel_id], videos))
+		if len(videos) == 0:
+			break
+		for video in videos:
+			title = video['playlistVideoRenderer']['title']['runs'][0]['text']
+			video_id = video['playlistVideoRenderer']['videoId']
+			print(f"{title} ({video_id})")
+			settings['tracked_channels'][channel_id].append(video_id)
 
 while True:
 	print("Currently tracked channels:")
@@ -306,4 +233,5 @@ while True:
 		break
 
 with open(path, 'w', encoding='utf-8') as f:
+	settings['failed_downloads'] = list(settings['failed_downloads'])
 	f.write(json.dumps(settings))
