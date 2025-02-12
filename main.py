@@ -31,6 +31,7 @@ if not os.path.exists(path):
 try:
 	with open(path, "r", encoding="utf-8") as f:
 		settings: Settings = json.loads(f.read())
+		settings['failed_downloads'] = set(settings['failed_downloads'])
 except Exception as e:
 	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, should_download=True, failed_downloads=set(), tracked_channels={})
 
