@@ -177,6 +177,11 @@ def add_channel(channel_id):
 			video_id = video['playlistVideoRenderer']['videoId']
 			print(f"{title} ({video_id})")
 			settings['tracked_channels'][channel_id].append(video_id)
+	if 'playlistVideoRenderer' in continuation.keys():
+		title = continuation['playlistVideoRenderer']['title']['runs'][0]['text']
+		video_id = continuation['playlistVideoRenderer']['videoId']
+		print(f"{title} ({video_id})")
+		settings['tracked_channels'][channel_id].append(video_id)
 
 while True:
 	print("Currently tracked channels:")
