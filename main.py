@@ -9,8 +9,6 @@ import json
 from typing import Optional, TypedDict
 import innertube
 import random
-import httpx
-import yt_dlp
 
 class Settings(TypedDict):
 	period: int
@@ -72,6 +70,7 @@ def print_channels(url: str):
 		del settings['tracked_channels'][channel]
 
 def download_videos(id_list: set[str]) -> bool:
+	import yt_dlp
 	folder_path = 'downloads/' + time.strftime("%Y_%m_%d")
 	if not os.path.exists(folder_path):
 		os.mkdir(folder_path)
