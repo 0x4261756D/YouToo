@@ -152,6 +152,13 @@ def watch_for_changes(event: threading.Event):
 						ids = set(map(lambda x: x['playlistVideoRenderer']['videoId'], diffs))
 						if not download_videos(ids):
 							settings['failed_downloads'].update(ids)
+				if 'playlistVideoRenderer' in continuation.keys() and continuation['playlistVideoRenderer']['videoId'] not in settings['tracked_channels'][channel]:
+					print('A LAST UPDATE FOUND')
+					title = continuation['playlistVideoRenderer']['title']['runs'][0]['text']
+					video_id = continuation['playlistVideoRenderer']['videoId']
+					settings['failed_downloads_names'][video_id] = title
+					print(f"{title} ({video_id})")
+					settings['tracked_channels'][channel].append(video_id)
 			elif settings['display_unchanged_things']:
 				print(f"No updates found for {channel}")
 		if settings['should_download'] and settings['should_reattempt_failed_downloads'] and len(settings['failed_downloads']) > 0:
