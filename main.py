@@ -80,11 +80,15 @@ def download_videos(id_list: set[str]) -> bool:
 		with yt_dlp.YoutubeDL(options) as ydl:
 			error_code = ydl.download(id_list)
 			if error_code != 0:
-				print(error_code)
+				print(f'Error code: {error_code}')
 				return False
 			return True
 	except Exception as e:
-		print(e)
+		if "This live event" in str(e):
+			return True
+		if "has already been downloaded" in str(e):
+			return True
+		print(f'Exception: {e}')
 		return False
 
 def watch_for_changes(event: threading.Event):
