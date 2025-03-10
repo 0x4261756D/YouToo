@@ -22,6 +22,8 @@ class Settings(TypedDict):
 	failed_downloads: set[str]
 	tracked_channels: dict[str, list[str]]
 	reattempt_batch_size: int
+	failed_downloads_names: dict[str, str]
+	channel_names: dict[str, str]
 
 path = 'settings.json'
 
@@ -41,6 +43,8 @@ if settings["should_download"] and not os.path.exists(settings["download_folder"
 settings.setdefault('reattempt_batch_size', 10)
 if settings["reattempt_batch_size"] <= 0:
 	settings["reattempt_batch_size"] = 10
+settings.setdefault("failed_downloads_names", {})
+settings.setdefault("channel_names", {})
 
 url: str = settings['base_url']
 
@@ -54,7 +58,9 @@ def print_channels(url: str):
 			time.sleep(random.randint(0, 3))
 			try:
 				response = client.browse(channel)
-				print(f'{channel}: {response["metadata"]["channelMetadataRenderer"]["title"]}')
+				name = response["metadata"]["channelMetadataRenderer"]["title"]
+				settings["channel_names"][channel] = name
+				print(f'{channel}: {name}')
 			except:
 				print(f'Could not get info for {channel}.')
 				answer = input('Press `r` to retry, `d` to delete.')
@@ -99,12 +105,15 @@ def watch_for_changes(event: threading.Event):
 			*videos, continuation = response['contents']['twoColumnBrowseResultsRenderer']['tabs'][0]['tabRenderer']['content']['sectionListRenderer']['contents'][0]['itemSectionRenderer']['contents'][0]['playlistVideoListRenderer']['contents']
 			diffs = list(filter(lambda x: x['playlistVideoRenderer']['videoId'] not in settings['tracked_channels'][channel], videos))
 			if len(diffs) != 0:
-				print(f"{len(diffs)} UPDATE(S) FOUND IN CHANNEL {response['header']['playlistHeaderRenderer']['ownerText']['runs'][0]['text']} ({channel})")
+				channel_name = response['header']['playlistHeaderRenderer']['ownerText']['runs'][0]['text']
+				settings['channel_names'][channel] = channel_name
+				print(f"{len(diffs)} UPDATE(S) FOUND IN CHANNEL {channel_name} ({channel})")
 				for diff in diffs:
 					if event.is_set():
 						return
 					title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
 					video_id = diff['playlistVideoRenderer']['videoId']
+					settings['failed_downloads_names'][video_id] = title
 					print(f"{title} ({video_id})")
 					settings['tracked_channels'][channel].append(video_id)
 				if settings['should_download']:
@@ -131,6 +140,7 @@ def watch_for_changes(event: threading.Event):
 					for video in diffs:
 						title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
 						video_id = diff['playlistVideoRenderer']['videoId']
+						settings['failed_downloads_names'][video_id] = title
 						print(f"{title} ({video_id})")
 						settings['tracked_channels'][channel].append(video_id)
 					if settings['should_download']:
@@ -143,6 +153,7 @@ def watch_for_changes(event: threading.Event):
 		if settings['should_download'] and settings['should_reattempt_failed_downloads'] and len(settings['failed_downloads']) > 0:
 			print(f'Reattempting {len(settings["failed_downloads"])} failed downloads')
 			tmp = list(settings['failed_downloads'])
+			print([settings["failed_downloads_names"].get(vid_id) for vid_id in tmp])
 			for i in range(0, len(tmp), settings['reattempt_batch_size']):
 				print(f'({i}-{i + settings["reattempt_batch_size"]})')
 				if download_videos(tmp[i:i+settings['reattempt_batch_size']]):
@@ -193,7 +204,7 @@ def add_channel(channel_id):
 while True:
 	print("Currently tracked channels:")
 	for channel in settings['tracked_channels']:
-		print(channel)
+		print(f"{channel} ({settings['channel_names'].get(channel)})")
 	print("---------------------------")
 	print("Current instance:", settings['base_url'])
 	print("1: Start watching for changes every", settings['period'], "seconds")
