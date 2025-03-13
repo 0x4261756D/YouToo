@@ -12,7 +12,6 @@ import random
 
 class Settings(TypedDict):
 	period: int
-	base_url: str
 	display_unchanged_things: bool
 	download_folder: str
 	should_reattempt_failed_downloads: bool
@@ -34,7 +33,7 @@ try:
 		settings: Settings = json.loads(f.read())
 		settings['failed_downloads'] = set(settings['failed_downloads'])
 except Exception as e:
-	settings = Settings(period=1800, base_url="yt.cdaut.de", display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, should_download=True, failed_downloads=set(), tracked_channels={}, reattempt_batch_size=10)
+	settings = Settings(period=1800, display_unchanged_things=False, download_folder="./downloads/", should_reattempt_failed_downloads=True, should_download=True, failed_downloads=set(), tracked_channels={}, reattempt_batch_size=10)
 
 if settings["should_download"] and not os.path.exists(settings["download_folder"]):
 	os.mkdir(settings["download_folder"])
@@ -44,9 +43,7 @@ if settings["reattempt_batch_size"] <= 0:
 settings.setdefault("failed_downloads_names", {})
 settings.setdefault("channel_names", {})
 
-url: str = settings['base_url']
-
-def print_channels(url: str):
+def print_channels():
 	global settings
 	channels_to_delete: list[str] = []
 	for channel in settings['tracked_channels']:
@@ -216,7 +213,6 @@ while True:
 	for channel in settings['tracked_channels']:
 		print(f"{channel} ({settings['channel_names'].get(channel)})")
 	print("---------------------------")
-	print("Current instance:", settings['base_url'])
 	print("1: Start watching for changes every", settings['period'], "seconds")
 	print(f"2: Change period ({settings['period']})")
 	print("3: Add a channel")
@@ -225,9 +221,8 @@ while True:
 	print(f"6: Change displaying unchanged things ({settings['display_unchanged_things']})")
 	print("7: Read channel list from file")
 	print(f"8: Change reattempts at failed downloads ({settings['should_reattempt_failed_downloads']})")
-	print(f"9: Change the base url ({settings['base_url']})")
-	print("10: Print all channel names")
-	print(f"11: Change reattempt batch size ({settings['reattempt_batch_size']})")
+	print("9: Print all channel names")
+	print(f"10: Change reattempt batch size ({settings['reattempt_batch_size']})")
 	print("q: Exit")
 	option = input("---------------------------\n")
 	if option == "1":
@@ -264,10 +259,8 @@ while True:
 	elif option == "8":
 		settings['should_reattempt_failed_downloads'] = input("New value: ").lower() == "true"
 	elif option == "9":
-		settings['base_url'] = input("New value: ")
+		print_channels()
 	elif option == "10":
-		print_channels(settings['base_url'])
-	elif option == "11":
 		settings['reattempt_batch_size'] = int(input("New value: "))
 		if settings['reattempt_batch_size'] <= 0:
 			settings['reattempt_batch_size'] = 10
