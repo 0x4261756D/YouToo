@@ -113,7 +113,7 @@ def watch_for_changes(event: threading.Event):
 						return
 					title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
 					video_id = diff['playlistVideoRenderer']['videoId']
-					settings['failed_downloads_names'][video_id] = title
+					settings['failed_downloads_names'][video_id] = f"{channel_name}: {title}"
 					print(f"{title} ({video_id})")
 					settings['tracked_channels'][channel].append(video_id)
 				if settings['should_download']:
@@ -140,7 +140,7 @@ def watch_for_changes(event: threading.Event):
 					for video in diffs:
 						title = diff['playlistVideoRenderer']['title']['runs'][0]['text']
 						video_id = diff['playlistVideoRenderer']['videoId']
-						settings['failed_downloads_names'][video_id] = title
+						settings['failed_downloads_names'][video_id] = f"{channel_name}: {title}"
 						print(f"{title} ({video_id})")
 						settings['tracked_channels'][channel].append(video_id)
 					if settings['should_download']:
@@ -152,7 +152,7 @@ def watch_for_changes(event: threading.Event):
 					print('A LAST UPDATE FOUND')
 					title = continuation['playlistVideoRenderer']['title']['runs'][0]['text']
 					video_id = continuation['playlistVideoRenderer']['videoId']
-					settings['failed_downloads_names'][video_id] = title
+					settings['failed_downloads_names'][video_id] = f"{channel_name}: {title}"
 					print(f"{title} ({video_id})")
 					settings['tracked_channels'][channel].append(video_id)
 			elif settings['display_unchanged_things']:
