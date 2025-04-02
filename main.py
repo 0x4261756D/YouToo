@@ -71,7 +71,7 @@ def download_videos(id_list: set[str]) -> bool:
 	folder_path = 'downloads/' + time.strftime("%Y_%m_%d")
 	if not os.path.exists(folder_path):
 		os.mkdir(folder_path)
-	options = {'proxy': 'socks5://127.0.0.1:9050', 'outtmpl': f'{folder_path}/%(title)s_%(id)s.%(ext)s'}
+	options = {'proxy': 'socks5://127.0.0.1:9050', 'outtmpl': f'{folder_path}/%(uploader)s_%(title)s_%(id)s.%(ext)s'}
 	try:
 		with yt_dlp.YoutubeDL(options) as ydl:
 			error_code = ydl.download(id_list)
