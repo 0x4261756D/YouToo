@@ -161,10 +161,10 @@ def watch_for_changes(event: threading.Event):
 			print(f'Reattempting {len(settings["failed_downloads"])} failed downloads')
 			tmp = list(settings['failed_downloads'])
 			print([settings["failed_downloads_names"].get(vid_id) for vid_id in tmp])
-			for i in range(0, len(tmp), settings['reattempt_batch_size']):
-				print(f'({i}-{i + settings["reattempt_batch_size"]})')
-				if download_videos(tmp[i:i+settings['reattempt_batch_size']]):
-					settings['failed_downloads'].difference_update(tmp[i:i+settings['reattempt_batch_size']])
+			for j in range(0, len(tmp), settings['reattempt_batch_size']):
+				print(f'({j}-{j + settings["reattempt_batch_size"]})')
+				if download_videos(tmp[j:j+settings['reattempt_batch_size']]):
+					settings['failed_downloads'].difference_update(tmp[j:j+settings['reattempt_batch_size']])
 		i += 1
 		print(f"Checked {i} times, next update: {datetime.datetime.fromtimestamp(time.time() + settings['period'])}")
 		event.wait(settings['period'])
