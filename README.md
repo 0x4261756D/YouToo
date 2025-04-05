@@ -1,3 +1,5 @@
+**Moved to [Codeberg](https://codeberg.org/0x4261756D/YouToo)**
+
 # YouToo
 
 Small utility to periodically check for new uploads from a list of YouTube channels.
